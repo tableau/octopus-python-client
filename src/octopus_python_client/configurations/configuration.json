@@ -1,0 +1,7 @@
+{
+  "octopus_endpoint": "https://demo.octopusdeploy.com/api/",
+  "octopus_name": "octopus_demo_server",
+  "user_name": "guest",
+  "password": "guest",
+  "api_key": null
+}

@@ -1,0 +1,14 @@
+.gradle
+.idea
+build
+activate.bat
+activate
+*.pyc
+*.swp
+*.iml
+*.egg-info
+coverage-report/
+.DS_Store
+generated/
+dist/
+.cache/

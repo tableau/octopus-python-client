@@ -1,0 +1,3 @@
+include *.md
+include src/octopus_python_client/configurations/*.*
+include license.txt

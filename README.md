@@ -5,13 +5,12 @@
 Python script to manage Octopus deploy servers through the Octopus Restful APIs
 
 * [Why octopus-python-client?](#why-octopus-python-client)
-* [Demo](#example)
+* [Example](#example)
 * [Get started](#get-started)
 	* [Prerequisites](#prerequisites)
 	* [Configuration](#configuration)
 	* [Installation](#installation)
 * [Run octopus-python-client](#run-octopus-python-client)
-* [Support](#support)
 * [Contributions](#contributions)
 
 # Why octopus-python-client?

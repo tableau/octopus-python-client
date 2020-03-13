@@ -59,11 +59,11 @@ def _parse_args():
                              'list like "accounts,actiontemplates,artifacts" is also accepted; '
                              'item types above Spaces: ' + ", ".join(item_types_only_ourter_space) +
                              "; \nitem types above and under Spaces: " + ", ".join(item_types_inside_space))
-    parser.add_argument("-it", "--item_type", help="one of item types above Spaces: " + ", ".join(
+    parser.add_argument("-tp", "--item_type", help="one of item types above Spaces: " + ", ".join(
         item_types_only_ourter_space) + "; \nitem types above and under Spaces: " + ", ".join(item_types_inside_space))
-    parser.add_argument("-in", "--item_name", help="item name: e.g. project_name")
+    parser.add_argument("-nm", "--item_name", help="item name: e.g. project_name")
     parser.add_argument("-id", "--item_id", help="item id: e.g. Lifecycles-1")
-    parser.add_argument("-bi", "--base_item_name", help="base item name, either local or on Octopus server")
+    parser.add_argument("-bn", "--base_item_name", help="base item name, either local or on Octopus server")
     parser.add_argument("-pn", "--parent_name", help="parent item name: e.g. project_name")
     parser.add_argument("-pt", "--parent_type", help="parent item type: e.g. projects")
     parser.add_argument("-ct", "--child_type", help=f"child item type: e.g. {item_type_deployment_processes}")

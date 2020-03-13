@@ -35,6 +35,7 @@ class Actions:
     action_clone_space_item = "clone_space_item"
     # clone a few types from one space to another space
     action_clone_space = "clone_space"
+    clone_space_actions = {action_clone_space_item, action_clone_space}
 
 
 def _parse_args():
@@ -118,24 +119,29 @@ def run():
     print('config.octopus_name: ' + config.octopus_name)
 
     # verify space id/name
-    space_id = None
-    if args.space_id_name:
-        space_id = verify_space(space_id_or_name=args.space_id_name)
-        if space_id:
-            print(f"octopus space_id is: {space_id}")
-        else:
-            raise ValueError(f"the space id/name {args.space_id_name} you specified does not exist")
-    else:
-        if input(f"Are you sure you want to run a command against null space [Y/n]? ") != 'Y':
-            return
-
     dst_space_id = None
     if args.dst_space_id_name:
         dst_space_id = verify_space(space_id_or_name=args.dst_space_id_name)
         if dst_space_id:
             print(f"destination space_id is: {dst_space_id}")
         else:
-            raise ValueError(f"the destination space id/name {args.dst_space_id_name} you specified does not exist")
+            raise ValueError(f"the destination space id/name {args.dst_space_id_name} you specified does not exist "
+                             f"or you may not have permission to access it")
+
+    space_id = None
+    if args.space_id_name:
+        space_id = verify_space(space_id_or_name=args.space_id_name)
+        if space_id:
+            print(f"octopus space_id is: {space_id}")
+        elif args.action not in Actions.clone_space_actions:
+            raise ValueError(f"the space id/name {args.space_id_name} you specified does not exist "
+                             f"or you may not have permission to access it")
+        elif input(f"Are you sure you want to {args.action} from nonexistent space {args.space_id_name} [Y/n]?") == 'Y':
+            space_id = args.space_id_name
+        else:
+            return
+    elif input(f"Are you sure you want to run a command against null space [Y/n]? ") != 'Y':
+        return
 
     if args.overwrite:
         config.overwrite = args.overwrite

@@ -10,7 +10,7 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     item_type_tags, tenant_id_key, item_type_migration, space_map, get_local_single_item_file, put_single_item, \
     get_single_item_by_name_or_id_save, item_type_tenants, slash_sign, underscore_sign, item_type_feeds, \
     secret_key_key, new_value_key, hyphen_sign, get_one_type, item_type_channels, project_id_key, item_type_releases, \
-    item_type_artifacts, file_name_key, put_post_tenant_variables_save
+    item_type_artifacts, file_name_key, put_post_tenant_variables_save, get_one_type_to_list_ignore_error
 from octopus_python_client.helper import find_item, save_file, find_intersection_multiple_keys_values
 
 
@@ -327,9 +327,14 @@ class Migration:
         return item_id
 
     def __get_all_local_types(self, item_types=item_types_inside_space):
-        print(f"getting all types and items from the local files in {self.__src_space_id}...")
+        print(f"getting {item_types} from space {self.__src_space_id}...")
         for item_type in item_types:
-            src_list_items = get_list_items_from_file(item_type=item_type, space_id=self.__src_space_id)
+            print(f"Retrieving {item_type} from space {self.__src_space_id}...")
+            src_list_items = get_one_type_to_list_ignore_error(item_type=item_type, space_id=self.__src_space_id)
+            if not src_list_items:
+                # for cloning space from another Octopus server
+                print(f"{item_type} cannot be downloaded from space {self.__src_space_id}, so read local file...")
+                src_list_items = get_list_items_from_file(item_type=item_type, space_id=self.__src_space_id)
             self.__type_src_list_items_dict[item_type] = src_list_items
             for src_item in src_list_items:
                 if src_item.get(id_key):

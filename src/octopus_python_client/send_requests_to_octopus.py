@@ -59,7 +59,7 @@ def call_octopus(config=None, url_suffix=None, operation=None, payload=None):
             if response.status_code == 403:
                 print(response_json)
             elif response.status_code < 200 or response.status_code > 299:
-                raise ValueError('request failed: ' + str(response_json))
+                raise ValueError(response_json)
             return response_json
         except requests.exceptions.RequestException as e:
             print(e)

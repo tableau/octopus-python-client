@@ -783,3 +783,12 @@ def get_list_variables_by_set_name_or_id(set_name=None, set_id=None, space_id=No
     variables_dict = \
         get_or_delete_single_item_by_id(item_type=item_type_variables, item_id=set_id, space_id=space_id)
     return variables_dict.get(variables_key)
+
+
+def get_one_type_to_list_ignore_error(item_type=None, space_id=None):
+    all_items = None
+    try:
+        all_items = get_one_type(item_type=item_type, space_id=space_id)
+    except ValueError as err:
+        print(err)
+    return get_list_items_from_all_items(all_items=all_items)

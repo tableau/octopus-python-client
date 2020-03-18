@@ -1,3 +1,4 @@
+import copy
 import os
 from pprint import pprint
 
@@ -9,16 +10,13 @@ from octopus_python_client.send_requests_to_octopus import call_octopus, operati
 all_underscore = "all_"
 dot_sign = "."
 double_hyphen = "--"
-environment_integration = "Integration"
 file_configuration = "configuration.json"
 folder_outer_spaces = "outer_spaces"
 folder_configurations = "configurations"
 hyphen_sign = "-"
-release_versions_prefix = "release_versions"
 slash_all = "/all"
 slash_sign = "/"
 space_map = "space_map"
-tenant_cd_near = "cd-near"
 underscore_sign = "_"
 url_all_pages = "?skip=0&take=2147483647"
 yaml_ext = ".yaml"
@@ -145,6 +143,9 @@ item_types_only_ourter_space = \
      "octopusservernodes", "performanceconfiguration", "permissions/all", "scheduler", "serverconfiguration",
      "serverconfiguration/settings", "serverstatus", "smtpconfiguration", "upgradeconfiguration", "users",
      "userroles", item_type_configuration, item_type_spaces, item_type_home, item_type_scoped_user_roles]
+# the sub item map for a specific type; this is for deleting the unused sub items when the item cannot be deleted
+# e.g. tagsets: Tags is the key to get the list of the sub items; CanonicalTagName is for printing purpose
+item_type_sub_item_map = {item_type_tag_sets: (tags_key, canonical_tag_name_key)}
 
 
 class Config:
@@ -328,7 +329,7 @@ def delete_one_type(item_type=None, space_id=None):
         print(f"{item_type} has no sub-single-item, exit")
         return
     for item in get_list_items_from_all_items(all_items=all_items):
-        delete_single_item(item_type=item_type, item=item, space_id=space_id)
+        delete_single_item_by_name_or_id(item_type=item_type, item_id=item.get(id_key), space_id=space_id)
 
 
 # get all items for all item_type(s) by call Octopus API /api/{space_id}/item_type with 'get' operation
@@ -420,6 +421,17 @@ def put_post_tenant_variables_save(tenant_id=None, space_id=None, tenant_variabl
     return remote_tenant_variables
 
 
+def get_single_item_by_name_or_id(item_type=None, item_name=None, item_id=None, space_id=None):
+    if not item_type or not item_name and not item_id:
+        raise ValueError("item_type and item_name/item_id must not be empty")
+    if item_name:
+        return get_single_item_by_name(item_type=item_type, item_name=item_name, space_id=space_id)
+    elif item_id:
+        return get_or_delete_single_item_by_id(item_type=item_type, item_id=item_id, space_id=space_id)
+    else:
+        raise ValueError("Either item_name or item_id must be present")
+
+
 # get a single item from Octopus server
 # if item_name
 # 1. get all items for an item_type by call Octopus API /api/{space_id}/item_type with 'get' operation
@@ -430,15 +442,8 @@ def put_post_tenant_variables_save(tenant_id=None, space_id=None, tenant_variabl
 # by directly calling the Octopus API /api/{space_id}/item_type/{id} with 'get'
 # since there is no 'Name' in some of the json response, we have to use 'Id' as the file name to save it
 def get_single_item_by_name_or_id_save(item_type=None, item_name=None, item_id=None, space_id=None):
-    if not item_type or not item_name and not item_id:
-        raise ValueError("item_type and item_name/item_id must not be empty")
-    if item_name:
-        item = get_single_item_by_name(item_type=item_type, item_name=item_name, space_id=space_id)
-    elif item_id:
-        item = get_or_delete_single_item_by_id(item_type=item_type, item_id=item_id, space_id=space_id)
-    else:
-        raise ValueError("Either item_name or item_id must not be present")
-    item = save_single_item(item_type=item_type, item=item, space_id=space_id)
+    item = get_single_item_by_name_or_id(item_type=item_type, item_name=item_name, item_id=item_id, space_id=space_id)
+    save_single_item(item_type=item_type, item=item, space_id=space_id)
     # process child items
     if item_type == item_type_projects:
         print(f"the item type is {item_type_projects}, so also get its deployment_process and variables")
@@ -557,51 +562,57 @@ def delete_file(file_name=None):
         pass
 
 
-# delete a single item
-def delete_single_item(item_type=None, item=None, space_id=None):
-    if not item_type or not item:
-        raise ValueError("item_type and item must not be empty")
-
-    if item.get(name_key):
-        item_info = item.get(name_key)
-    else:
-        item_info = item.get(id_key)
-
-    if not config.overwrite and input(f"Are you sure to delete {item_type} {item_info} in {space_id} [Y/n]: ") != 'Y':
+# delete unused sub items if the item cannot be deleted due to some sub items are being used
+def delete_sub_items(item_type=None, item_name=None, item_id=None, space_id=None):
+    item_badge = item_name if item_name else item_id
+    sub_item_tuple = item_type_sub_item_map.get(item_type)
+    if not sub_item_tuple:
+        print(f"{item_type} {item_badge} does not have sub items for deleting; exit")
         return
-
-    print(f"Deleting {item_type} {item_info} in {space_id}...")
-
-    # call delete API
-    get_or_delete_single_item_by_id(item_type=item_type, item_id=item.get(id_key), action=operation_delete,
-                                    space_id=space_id)
-    # do not delete local file in case we want to recover
-    # # remove the local file
-    # local_item_file = get_local_single_item_file(item_name=item_info, item_type=item_type, space_id=space_id)
-    # delete_file(local_item_file)
-    #
-    # # remove the process file if the item_type is projects
-    # if item_type == item_type_projects:
-    #     local_process_file = get_local_child_file(parent_name=item_info, child_type=item_type_deployment_processes,
-    #                                               space_id=space_id)
-    #     delete_file(local_process_file)
+    print(f"Deleting the unused sub items of {item_type} {item_badge} in {space_id}...")
+    item = get_single_item_by_name_or_id(item_type=item_type, item_name=item_name, item_id=item_id, space_id=space_id)
+    if not item:
+        print(f"{item_type} {item_badge} does not exist in {space_id}; exit")
+        return
+    index = 0
+    sub_items_key = sub_item_tuple[0]
+    sub_item_name_key = sub_item_tuple[1]
+    while index < len(item.get(sub_items_key)):
+        item_copy = copy.deepcopy(item)
+        sub_item = item_copy.get(sub_items_key).pop(index)
+        try:
+            item = put_single_item(item_type=item_type, payload=item_copy, space_id=space_id)
+            print(f"sub item with {sub_item_name_key}: {sub_item.get(sub_item_name_key)} was deleted")
+        except ValueError as err:
+            print(err)
+            print(f"sub item with {sub_item_name_key}: {sub_item.get(sub_item_name_key)} cannot be deleted; skip it")
+            index += 1
+    print(f"----- completed deleting sub items -----")
 
 
 # delete a single item
 def delete_single_item_by_name_or_id(item_type=None, item_name=None, item_id=None, space_id=None):
     if not item_type or not item_name and not item_id:
         raise ValueError("item_type and item_name/item_id must not be empty")
+    item_info = item_name if item_name else item_id
 
-    # find the item
-    if item_name:
-        all_items = get_one_type(item_type=item_type, space_id=space_id)
-        list_items = get_list_items_from_all_items(all_items=all_items)
-        item = find_item(list_items, name_key, item_name)
-        if item:
-            delete_single_item(item_type=item_type, item=item, space_id=space_id)
-            return
-    print(f"{item_type} {item_name} could not be found in {space_id}, delete by id {item_id}")
-    delete_single_item(item_type=item_type, item={id_key: item_id}, space_id=space_id)
+    item = get_single_item_by_name_or_id(item_type=item_type, item_name=item_name, item_id=item_id, space_id=space_id)
+
+    if not item:
+        print(f"{item_type} {item_info} does not exist in {space_id}; exit")
+        return
+
+    if not config.overwrite and input(f"Are you sure to delete {item_type} {item_info} in {space_id} [Y/n]: ") != 'Y':
+        return
+
+    print(f"deleting {item_type} {item_info} in {space_id}...")
+    try:
+        get_or_delete_single_item_by_id(item_type=item_type, item_id=item.get(id_key), action=operation_delete,
+                                        space_id=space_id)
+    except ValueError as err:
+        print(err)
+        print(f"try to delete unused sub items of {item_type} {item_info} in {space_id}...")
+        delete_sub_items(item_type=item_type, item_id=item.get(id_key), space_id=space_id)
 
 
 # create a new single item from a local file

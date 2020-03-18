@@ -32,33 +32,29 @@ def call_octopus(config=None, url_suffix=None, operation=None, payload=None):
         try:
             print(f"{operation}: " + url)
             if operation.lower() == operation_post:
-                response = session.post(url, json=payload, headers=headers)
+                session_response = session.post(url, json=payload, headers=headers)
             elif operation.lower() == operation_get:
-                response = session.get(url, params=payload, headers=headers)
+                session_response = session.get(url, params=payload, headers=headers)
                 # TODO bug https://help.octopus.com/t/504-gateway-time-out-on-getting-all-variables/24732
-                if response.status_code == 504:
-                    print(response.text)
+                if session_response.status_code == 504:
+                    print(session_response.text)
                     return {}
             elif operation.lower() == operation_put:
-                response = session.put(url, json=payload, headers=headers)
+                session_response = session.put(url, json=payload, headers=headers)
             elif operation.lower() == operation_delete:
-                response = session.delete(url, headers=headers)
-                # when deleting an item referenced by other items, ignore the error and continue to delete other items
-                if response.status_code == 400:
-                    print(response.text)
-                    return response.text
+                session_response = session.delete(url, headers=headers)
             else:
                 err = f'Wrong operation: {operation}; only post, get, put and delete are supported'
                 raise ValueError(err)
-            print("response status code: " + str(response.status_code))
+            print("response status code: " + str(session_response.status_code))
             # print("response headers: " + str(response.headers))
             response_json = ""
-            if response.text:
-                response_json = response.json()
+            if session_response.text:
+                response_json = session_response.json()
             # if permission is denied, continue with other operations
-            if response.status_code == 403:
+            if session_response.status_code == 403:
                 print(response_json)
-            elif response.status_code < 200 or response.status_code > 299:
+            elif session_response.status_code < 200 or session_response.status_code > 299:
                 raise ValueError(response_json)
             return response_json
         except requests.exceptions.RequestException as e:

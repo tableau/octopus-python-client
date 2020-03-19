@@ -299,9 +299,15 @@ def get_one_type(item_type=None, space_id=None):
         return call_octopus(config=config, url_suffix=space_url)
     if item_type in only_all_types:
         url_suffix = space_url + item_type + slash_all
+        # TODO bug https://help.octopus.com/t/504-gateway-time-out-on-getting-all-variables/24732
+        try:
+            return call_octopus(config=config, url_suffix=url_suffix)
+        except ValueError as err:
+            print(err)
+            return {}
     else:
         url_suffix = space_url + item_type + url_all_pages
-    return call_octopus(config=config, url_suffix=url_suffix)
+        return call_octopus(config=config, url_suffix=url_suffix)
 
 
 # get/delete all items for an item_type by call Octopus API /api/{space_id}/item_type

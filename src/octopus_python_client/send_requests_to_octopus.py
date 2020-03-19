@@ -35,10 +35,6 @@ def call_octopus(config=None, url_suffix=None, operation=None, payload=None):
                 session_response = session.post(url, json=payload, headers=headers)
             elif operation.lower() == operation_get:
                 session_response = session.get(url, params=payload, headers=headers)
-                # TODO bug https://help.octopus.com/t/504-gateway-time-out-on-getting-all-variables/24732
-                if session_response.status_code == 504:
-                    print(session_response.text)
-                    return {}
             elif operation.lower() == operation_put:
                 session_response = session.put(url, json=payload, headers=headers)
             elif operation.lower() == operation_delete:

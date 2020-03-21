@@ -1,3 +1,4 @@
+import ast
 import copy
 import os
 from pprint import pprint
@@ -8,6 +9,9 @@ from octopus_python_client.send_requests_to_octopus import call_octopus, operati
 
 # constants
 all_underscore = "all_"
+error_message_key = "ErrorMessage"
+error_message_resource_not_found = "The resource you requested was not found."
+comma_sign = ","
 dot_sign = "."
 double_hyphen = "--"
 file_configuration = "configuration.json"
@@ -28,6 +32,8 @@ api_key_key = "api_key"
 canonical_tag_name_key = "CanonicalTagName"
 channel_id_key = "ChannelId"
 deployment_process_id_key = 'DeploymentProcessId'
+donor_package_key = "DonorPackage"
+donor_package_step_id_key = "DonorPackageStepId"
 environment_id_key = "EnvironmentId"
 environment_ids_key = "EnvironmentIds"
 feed_id_key = "FeedId"
@@ -47,6 +53,7 @@ project_group_id_key = "ProjectGroupId"
 project_id_key = "ProjectId"
 release_id_key = "ReleaseId"
 release_notes_key = "ReleaseNotes"
+runbook_process_id_key = "RunbookProcessId"
 secret_key_key = "SecretKey"
 selected_packages_key = "SelectedPackages"
 steps_key = 'Steps'
@@ -89,6 +96,7 @@ item_type_project_triggers = "projecttriggers"
 item_type_projects = "projects"
 item_type_proxies = "proxies"
 item_type_releases = "releases"
+item_type_runbook_process = "runbookProcess"
 item_type_runbooks = "runbooks"
 item_type_scoped_user_roles = "scopeduserroles"  # the space id should not be null in the response, buggy!
 item_type_spaces = 'spaces'
@@ -115,21 +123,20 @@ item_types_without_single_item = \
 # must have for a space to work
 must_have_types = [item_type_environments]
 # these types do not have dependencies on other types
-basic_types = [item_type_action_templates, item_type_certificates,
-               item_type_dashboard_configuration, item_type_feeds, item_type_machine_policies,
-               item_type_machines, item_type_proxies, item_type_subscriptions, item_type_tag_sets, item_type_teams,
-               item_type_library_variable_sets, item_type_worker_pools]
+basic_types = [item_type_action_templates, item_type_certificates, item_type_feeds, item_type_machine_policies,
+               item_type_machines, item_type_proxies, item_type_subscriptions, item_type_tag_sets,
+               item_type_teams, item_type_library_variable_sets, item_type_worker_pools]
 # these types have links/dependencies on other types
 complex_types = [item_type_workers, item_type_life_cycles, item_type_project_groups, item_type_projects,
-                 item_type_tenants, item_type_channels, item_type_project_triggers]
+                 item_type_runbooks, item_type_tenants, item_type_channels, item_type_project_triggers]
 # these types are the child type of another type
-child_types = [item_type_deployment_processes]
+child_types = [item_type_deployment_processes, item_type_runbook_process]
 # these types needs "/all" to get all items for this type
 only_all_types = [item_type_variables, item_type_tenant_variables, item_type_machine_roles]
 # the other types not cloneable
 other_types = [item_type_accounts, item_type_packages, item_type_releases, item_type_interruptions,
                item_type_user_onboarding, item_type_dashboard, item_type_dashboard_dynamic, item_type_deployments,
-               item_type_variables_names, item_type_runbooks, item_type_artifacts]
+               item_type_variables_names, item_type_artifacts, item_type_dashboard_configuration]
 # too many items in them, so ignore for now
 large_types = [item_type_tasks, item_type_events]
 # the types which are cloneable
@@ -176,9 +183,18 @@ class Config:
 config = Config()
 
 
-def verify_space(space_id_or_name=None):
+def get_list_spaces():
     all_spaces = get_one_type(item_type=item_type_spaces)
-    list_spaces = get_list_items_from_all_items(all_items=all_spaces)
+    return get_list_items_from_all_items(all_items=all_spaces)
+
+
+def get_list_space_ids():
+    list_spaces = get_list_spaces()
+    return [space.get(id_key) for space in list_spaces]
+
+
+def verify_space(space_id_or_name=None):
+    list_spaces = get_list_spaces()
     space = find_item(lst=list_spaces, key=id_key, value=space_id_or_name)
     if space:
         return space.get(id_key)
@@ -297,17 +313,17 @@ def get_one_type(item_type=None, space_id=None):
     space_url = space_id + slash_sign if space_id else ""
     if item_type == item_type_home:
         return call_octopus(config=config, url_suffix=space_url)
-    if item_type in only_all_types:
-        url_suffix = space_url + item_type + slash_all
-        # TODO bug https://help.octopus.com/t/504-gateway-time-out-on-getting-all-variables/24732
-        try:
+    # TODO bug https://help.octopus.com/t/504-gateway-time-out-on-getting-all-variables/24732
+    try:
+        if item_type in only_all_types:
+            url_suffix = space_url + item_type + slash_all
             return call_octopus(config=config, url_suffix=url_suffix)
-        except ValueError as err:
-            print(err)
-            return {}
-    else:
-        url_suffix = space_url + item_type + url_all_pages
-        return call_octopus(config=config, url_suffix=url_suffix)
+        else:
+            url_suffix = space_url + item_type + url_all_pages
+            return call_octopus(config=config, url_suffix=url_suffix)
+    except ValueError as err:
+        print(err)
+        return {}
 
 
 # get/delete all items for an item_type by call Octopus API /api/{space_id}/item_type
@@ -340,22 +356,44 @@ def delete_one_type(item_type=None, space_id=None):
 
 # get all items for all item_type(s) by call Octopus API /api/{space_id}/item_type with 'get' operation
 # item_types can be None, "", or "projects,tenants" etc
-def get_all_item_types_save(item_types_comma_delimited=None, space_id=None):
+def get_types_save(item_types_comma_delimited=None, space_id=None):
     if item_types_comma_delimited:
-        list_item_types = item_types_comma_delimited.split(",")
+        list_item_types = item_types_comma_delimited.split(comma_sign)
     else:
         if space_id:
             list_item_types = item_types_inside_space
         else:
             list_item_types = item_types_inside_space + item_types_only_ourter_space
-    if not config.overwrite:
+    if config.overwrite:
+        print(f"===== You are downloading {list_item_types} from space {space_id}... ===== ")
+    else:
         config.overwrite = \
-            input(f"***** You are downloading {list_item_types} from {space_id}; "
+            input(f"***** You are downloading {list_item_types} from space {space_id}; "
                   f"Some entities may already be downloaded locally; "
                   f"Do you want to overwrite all local existing entities? "
                   f"If no, you will be asked to overwrite or not for each type respectively. [Y/n]: ") == 'Y'
     for item_type in list_item_types:
         get_one_type_save(item_type=item_type, space_id=space_id)
+
+
+def get_spaces_save(item_types_comma_delimited=None, space_id_or_name_comma_delimited=None):
+    if space_id_or_name_comma_delimited:
+        list_space_ids_or_names = space_id_or_name_comma_delimited.split(comma_sign)
+        list_space_ids = [verify_space(space_id_or_name=space_id_or_name) for space_id_or_name in
+                          list_space_ids_or_names]
+    else:
+        list_space_ids = get_list_space_ids() + [None]
+    list_space_ids_set = set(list_space_ids)
+    if config.overwrite:
+        print(f"===== You are downloading spaces {list_space_ids_set}... =====")
+    else:
+        config.overwrite = \
+            input(f"===== You are downloading spaces {list_space_ids_set}; "
+                  f"Some entities may already be downloaded locally; "
+                  f"Do you want to overwrite all local existing entities? "
+                  f"If no, you will be asked to overwrite or not for each type respectively. [Y/n]: ") == 'Y'
+    for space_id in list_space_ids_set:
+        get_types_save(item_types_comma_delimited=item_types_comma_delimited, space_id=space_id)
 
 
 # get a single item from Octopus server
@@ -803,9 +841,16 @@ def get_list_variables_by_set_name_or_id(set_name=None, set_id=None, space_id=No
 
 
 def get_one_type_to_list_ignore_error(item_type=None, space_id=None):
-    all_items = None
     try:
         all_items = get_one_type(item_type=item_type, space_id=space_id)
     except ValueError as err:
         print(err)
+        if ast.literal_eval(str(err)).get(error_message_key) == error_message_resource_not_found:
+            # for clone space from one Octopus server to another
+            print(f"resource not found for {item_type} in {space_id}")
+            return None
+        else:
+            # TODO bug https://help.octopus.com/t/504-gateway-time-out-on-getting-all-variables/24732
+            print(f"resource exist for {item_type} in {space_id}, but some error prevents from getting the resource")
+            return []
     return get_list_items_from_all_items(all_items=all_items)

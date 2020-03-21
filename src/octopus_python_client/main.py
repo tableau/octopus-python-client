@@ -3,17 +3,18 @@ import argparse
 from octopus_python_client.common import config, get_one_type_save, get_single_item_by_name_or_id_save, \
     update_single_item_save, create_single_item_from_local_file, item_type_deployment_processes, \
     clone_single_item_from_remote_item, delete_single_item_by_name_or_id, get_child_item_save, \
-    update_child_item_from_local_save, clone_child_item_from_another_parent_save, get_all_item_types_save, \
+    update_child_item_from_local_save, clone_child_item_from_another_parent_save, get_types_save, \
     item_types_only_ourter_space, item_types_inside_space, deployment_process_id_key, steps_key, \
     merge_single_item_save, delete_one_type, api_key_key, octopus_endpoint_key, octopus_name_key, user_name_key, \
-    password_key, double_hyphen, verify_space
+    password_key, double_hyphen, verify_space, get_spaces_save
 from octopus_python_client.migration import Migration
 from octopus_python_client.processes import clone_process_step, delete_process_step
 from octopus_python_client.projects import clone_project, delete_project, get_project, project_update_variable_sets
 
 
 class Actions:
-    action_get_all = "get_all"  # get all types
+    action_get_spaces = "get_spaces"  # get all types
+    action_get_types = "get_types"  # get all types
     action_get_type = "get_type"  # get all items under one type
     action_delete_type = "delete_type"  # delete all items under one type
     action_get = "get"  # get one item
@@ -42,6 +43,8 @@ def _parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", double_hyphen + octopus_endpoint_key, help="octopus endpoint")
     parser.add_argument("-s", "--space_id_name", help="octopus space id or name")
+    parser.add_argument("-ss", "--spaces",
+                        help='list of octopus space id or name, like "my_space,Spaces-1,Spaces-2"')
     parser.add_argument("-ds", "--dst_space_id_name", help="destination octopus space id or name for clone/migration")
     parser.add_argument("-n", double_hyphen + octopus_name_key,
                         help="customized octopus server name, used for folder name")
@@ -140,14 +143,17 @@ def run():
             space_id = args.space_id_name
         else:
             return
-    elif input(f"Are you sure you want to run a command against null space [Y/n]? ") != 'Y':
+    elif args.action != Actions.action_get_spaces \
+            and input(f"Are you sure you want to run a command against null space [Y/n]? ") != 'Y':
         return
 
     if args.overwrite:
         config.overwrite = args.overwrite
 
-    if args.action == Actions.action_get_all:
-        get_all_item_types_save(item_types_comma_delimited=args.item_types, space_id=space_id)
+    if args.action == Actions.action_get_spaces:
+        get_spaces_save(item_types_comma_delimited=args.item_types, space_id_or_name_comma_delimited=args.spaces)
+    elif args.action == Actions.action_get_types:
+        get_types_save(item_types_comma_delimited=args.item_types, space_id=space_id)
     elif args.action == Actions.action_get_type:
         get_one_type_save(item_type=args.item_type, space_id=space_id)
     elif args.action == Actions.action_delete_type:

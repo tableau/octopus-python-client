@@ -10,7 +10,8 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     item_type_tags, tenant_id_key, item_type_migration, space_map, get_local_single_item_file, put_single_item, \
     get_single_item_by_name_or_id_save, item_type_tenants, slash_sign, underscore_sign, item_type_feeds, \
     secret_key_key, new_value_key, hyphen_sign, get_one_type, item_type_channels, project_id_key, item_type_releases, \
-    item_type_artifacts, file_name_key, put_post_tenant_variables_save, get_one_type_to_list_ignore_error
+    item_type_artifacts, file_name_key, put_post_tenant_variables_save, get_one_type_to_list_ignore_error, \
+    donor_package_key, runbook_process_id_key, item_type_runbooks, donor_package_step_id_key
 from octopus_python_client.helper import find_item, save_file, find_intersection_multiple_keys_values
 
 
@@ -78,9 +79,11 @@ class Migration:
     # child items will be created automatically when parent item is created
     def __prepare_project(self, src_item=None):
         print(f"prepare {item_type_projects} {src_item.get(name_key)} for migrating to {self.__dst_space_id}")
-        src_item.pop(versioning_strategy_key, None)
         src_item.pop(deployment_process_id_key, None)
         src_item.pop(variable_set_id_key, None)
+        # TODO once the migration supports clone packages; we do not have to pre-process VersioningStrategy
+        src_item.get(versioning_strategy_key)[donor_package_key] = None
+        src_item.get(versioning_strategy_key)[donor_package_step_id_key] = None
 
     # we do not want to clone the child items first;
     # child items will be created automatically when parent item is created
@@ -96,6 +99,14 @@ class Migration:
         if secret_key_key in src_item and not src_item.get(secret_key_key).get(new_value_key):
             src_item.get(secret_key_key)[new_value_key] = hyphen_sign
             print(f"assigned a placeholder {hyphen_sign} to {new_value_key} for {secret_key_key}")
+
+    # runbook is a new type inroduced in Octopus 2019.11; the older Octopus server may not support it
+    # TODO "RunbookProcessId": "RunbookProcess-Runbooks-68" the process needs to be put as post_process
+    # Need to upgrade Octopus server to the latest version
+    def __prepare_runbook(self, src_item=None):
+        print(f"prepare {item_type_runbooks} {src_item.get(name_key)} {src_item.get(id_key)} for migrating to "
+              f"{self.__dst_space_id}: popping {runbook_process_id_key}")
+        src_item.pop(runbook_process_id_key, None)
 
     def __clone_item_to_space(self, item_type=None, item_name=None, item_id=None):
         item_badge = item_name if item_name else item_id
@@ -331,9 +342,9 @@ class Migration:
         for item_type in item_types:
             print(f"Retrieving {item_type} from space {self.__src_space_id}...")
             src_list_items = get_one_type_to_list_ignore_error(item_type=item_type, space_id=self.__src_space_id)
-            if not src_list_items:
+            if src_list_items is None:
                 # for cloning space from another Octopus server
-                print(f"{item_type} cannot be downloaded from space {self.__src_space_id}, so read local file...")
+                print(f"{item_type} does not exist in space {self.__src_space_id}, so read local file...")
                 src_list_items = get_list_items_from_file(item_type=item_type, space_id=self.__src_space_id)
             self.__type_src_list_items_dict[item_type] = src_list_items
             for src_item in src_list_items:
@@ -364,6 +375,7 @@ class Migration:
         self.__type_prep_func_dict[item_type_projects] = self.__prepare_project
         self.__type_prep_func_dict[item_type_library_variable_sets] = self.__prepare_library_variable_set
         self.__type_prep_func_dict[item_type_feeds] = self.__prepare_feed
+        self.__type_prep_func_dict[item_type_runbooks] = self.__prepare_runbook
 
         self.__type_post_func_dict[item_type_projects] = self.__post_process_project
         self.__type_post_func_dict[item_type_library_variable_sets] = self.__post_process_library_variable_set
@@ -383,7 +395,7 @@ class Migration:
 
     def clone_space(self, src_space_id=None, dst_space_id=None, item_types_comma_delimited=None):
         if item_types_comma_delimited:
-            process_types = must_have_types + item_types_comma_delimited.split(",")
+            process_types = must_have_types + item_types_comma_delimited.split(comma_sign)
         else:
             process_types = normal_cloneable_types
         if not config.overwrite:

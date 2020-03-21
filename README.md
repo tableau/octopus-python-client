@@ -24,7 +24,7 @@ https://help.octopus.com/t/how-do-i-transfer-or-clone-a-project-to-a-different-s
 https://help.octopus.com/t/octopus-migration-import-api-does-not-honor-space-id/24287/4
 
 # Example
-get all configurations and settings for Sapces-22 of https://demo.octopusdeploy.com/api/
+get all configurations and settings from all spaces at https://demo.octopusdeploy.com/api/
 ```
 octopus_python_client -a=get_spaces
 ```

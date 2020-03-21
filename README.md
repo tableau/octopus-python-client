@@ -26,7 +26,7 @@ https://help.octopus.com/t/octopus-migration-import-api-does-not-honor-space-id/
 # Example
 get all configurations and settings for Sapces-22 of https://demo.octopusdeploy.com/api/
 ```
-octopus_python_client -a=get_all -s=Spaces-22
+octopus_python_client -a=get_spaces
 ```
 
 # Get started

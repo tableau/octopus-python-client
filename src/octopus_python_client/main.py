@@ -132,6 +132,7 @@ def run():
                              f"or you may not have permission to access it")
 
     space_id = None
+    fake_space = False
     if args.space_id_name:
         space_id = verify_space(space_id_or_name=args.space_id_name)
         if space_id:
@@ -141,6 +142,7 @@ def run():
                              f"or you may not have permission to access it")
         elif input(f"Are you sure you want to {args.action} from nonexistent space {args.space_id_name} [Y/n]?") == 'Y':
             space_id = args.space_id_name
+            fake_space = True
         else:
             return
     elif args.action != Actions.action_get_spaces \
@@ -206,10 +208,10 @@ def run():
                                      remove_suffix=args.remove_suffix)
     elif args.action == Actions.action_clone_space:
         Migration().clone_space(src_space_id=space_id, dst_space_id=dst_space_id,
-                                item_types_comma_delimited=args.item_types)
+                                item_types_comma_delimited=args.item_types, fake_space=fake_space)
     elif args.action == Actions.action_clone_space_item:
         Migration().clone_space_item(src_space_id=space_id, dst_space_id=dst_space_id, item_type=args.item_type,
-                                     item_name=args.item_name, item_id=args.item_id)
+                                     item_name=args.item_name, item_id=args.item_id, fake_space=fake_space)
 
     else:
         raise ValueError("We only support operations: " + str(Actions.__dict__.values()))

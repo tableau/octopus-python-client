@@ -1,7 +1,7 @@
 from octopus_python_client.common import item_type_projects, get_one_type_save, get_single_item_by_name_or_id_save, \
     delete_single_item_by_name_or_id, update_single_item_save, create_single_item_from_local_file, \
     clone_single_item_from_remote_item, item_type_library_variable_sets, included_library_variable_set_ids_key, \
-    id_key, name_key, put_single_item_save, get_one_type, get_list_items_from_all_items
+    id_key, name_key, put_single_item_save, get_one_type_ignore_error, get_list_items_from_all_items
 from octopus_python_client.helper import find_item, compare_lists
 from octopus_python_client.processes import clone_deployment_process
 
@@ -50,7 +50,7 @@ def project_update_variable_sets(project_literal_name=None, suffix=None, space_i
         raise ValueError("project name or suffix must not be empty")
     print(f"===== updating {space_id}'s project {project_literal_name}'s variable sets by "
           f"{'removing' if remove_suffix else 'adding'} a suffix {suffix}")
-    all_variable_sets = get_one_type(item_type=item_type_library_variable_sets, space_id=space_id)
+    all_variable_sets = get_one_type_ignore_error(item_type=item_type_library_variable_sets, space_id=space_id)
     list_variable_sets = get_list_items_from_all_items(all_items=all_variable_sets)
     project = get_project(project_literal_name, space_id=space_id)
     variable_sets_ids = project.get(included_library_variable_set_ids_key, [])

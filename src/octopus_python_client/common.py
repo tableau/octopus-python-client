@@ -13,6 +13,7 @@ error_message_resource_not_found = "The resource you requested was not found."
 comma_sign = ","
 dot_sign = "."
 double_hyphen = "--"
+environments_prefix = "Environments"
 file_configuration = "configuration.json"
 folder_outer_spaces = "outer_spaces"
 folder_configurations = "configurations"
@@ -21,9 +22,11 @@ runbook_process_prefix = "RunbookProcess"
 slash_all = "/all"
 slash_sign = "/"
 space_map = "space_map"
+tenants_prefix = "Tenants"
 underscore_sign = "_"
 url_all_pages = "?skip=0&take=2147483647"
 yaml_ext = ".yaml"
+positive_integer_regex = "-[1-9][0-9]*$"
 
 # dict keys
 action_name_key = "ActionName"
@@ -31,6 +34,7 @@ actions_key = 'Actions'
 api_key_key = "api_key"
 canonical_tag_name_key = "CanonicalTagName"
 channel_id_key = "ChannelId"
+cloned_from_tenant_id_key = "ClonedFromTenantId"
 deployment_process_id_key = 'DeploymentProcessId'
 donor_package_key = "DonorPackage"
 donor_package_step_id_key = "DonorPackageStepId"
@@ -174,6 +178,7 @@ item_types_only_ourter_space = \
 # the sub item map for a specific type; this is for deleting the unused sub items when the item cannot be deleted
 # e.g. tagsets: Tags is the key to get the list of the sub items; CanonicalTagName is for printing purpose
 item_type_sub_item_map = {item_type_tag_sets: (tags_key, canonical_tag_name_key)}
+item_id_prefix_to_type_dict = {environments_prefix: item_type_environments, tenants_prefix: item_type_tenants}
 
 
 class Config:

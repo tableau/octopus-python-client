@@ -1,10 +1,11 @@
 import copy
+import re
 from pprint import pprint
 from time import gmtime, strftime
 
 from octopus_python_client.common import name_key, tags_key, id_key, item_type_tag_sets, post_single_item_save, \
     item_type_projects, get_list_items_from_file, item_type_deployment_processes, deployment_process_id_key, config, \
-    get_one_type_save, versioning_strategy_key, item_types_inside_space, put_single_item_save, normal_cloneable_types, \
+    get_one_type_save, versioning_strategy_key, put_single_item_save, normal_cloneable_types, \
     get_list_items_from_all_items, version_key, must_have_types, item_type_library_variable_sets, item_type_variables, \
     variable_set_id_key, get_or_delete_single_item_by_id, item_type_tenant_variables, canonical_tag_name_key, \
     item_type_tags, tenant_id_key, item_type_migration, space_map, get_local_single_item_file, put_single_item, \
@@ -14,7 +15,7 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     get_one_type_to_list, donor_package_key, runbook_process_id_key, item_type_runbooks, \
     donor_package_step_id_key, item_type_accounts, token_key, comma_sign, space_id_key, \
     published_runbook_snapshot_id_key, item_type_scoped_user_roles, user_role_id_key, team_id_key, \
-    item_type_runbook_processes, runbook_process_prefix
+    item_type_runbook_processes, runbook_process_prefix, item_id_prefix_to_type_dict, positive_integer_regex
 from octopus_python_client.helper import find_item, save_file, find_intersection_multiple_keys_values
 
 
@@ -33,6 +34,7 @@ class Migration:
         self.__type_post_func_dict = {}
         self.__type_prep_func_dict = {}
         self.__type_src_list_items_dict = {}
+        self.__item_types_set = set()
 
     # search the type in the space and see if the matched item already exists
     def __find_matched_dst_item_by_src_item(self, src_item_dst_ids=None, item_type=None):
@@ -213,6 +215,20 @@ class Migration:
         dst_list_items = get_list_items_from_all_items(all_items=dst_all_items)
         self.__type_dst_list_items_dict[item_type] = dst_list_items
 
+    # some id like "Environments-123" should be removed if this is not referenced anyway
+    # most likely the entity has been removed and the reference is broken
+    # TODO it is a dangerous operation; find a better way to warn people to fix the source space first
+    def __check_broken_item_id(self, string=None):
+        # if the string is one of the src or dst item ids, it is valid
+        if string in self.__src_id_vs_dst_id_dict.keys() or string in self.__src_id_vs_dst_id_dict.values():
+            return False
+        for id_prefix, item_type in item_id_prefix_to_type_dict.items():
+            pattern = r"{}".format("^" + id_prefix + positive_integer_regex)
+            if re.match(pattern, string):
+                print(f"Please fix your source space by removing the broken id {string}")
+                return True
+        return False
+
     # recursively replace the old link id with the new link id
     # issue: if someone crazy names an environment name as "Environments-1", not "Development" or "Prod" etc,
     # it could cause the environment renamed as "Environment-10"
@@ -230,6 +246,10 @@ class Migration:
                     elif value in self.__src_id_payload_dict:
                         dict_list[key] = self.__clone_item_to_space(item_type=self.__src_id_type_dict.get(value),
                                                                     item_id=value)
+                    # remove the broken reference ids
+                    elif self.__check_broken_item_id(string=value):
+                        print(f"{value} does not exist, so assign null value to it")
+                        dict_list[key] = None
                 else:
                     self.__replace_ids(dict_list=value)
                 if isinstance(key, str):
@@ -239,21 +259,32 @@ class Migration:
                     elif key in self.__src_id_payload_dict:
                         new_key = self.__clone_item_to_space(item_type=self.__src_id_type_dict.get(key), item_id=key)
                         dict_list[new_key] = dict_list.pop(key)
+                    # remove the broken reference ids
+                    elif self.__check_broken_item_id(string=key):
+                        print(f"Key {value} does not exist, so pop it")
+                        dict_list.pop(key)
                 else:
-                    # TODO add a log if key is a dict; this case is very special
+                    print(f"{key} is a dict and needs further processing")
                     self.__replace_ids(dict_list=key)
         elif isinstance(dict_list, list):
-            for index, element in enumerate(dict_list):
+            print(f"dict_list is a list now, replace ids or delete broken ids")
+            # we must do reversely to avoid unexpected result on deleting by index
+            for index in range(len(dict_list) - 1, -1, -1):
+                element = dict_list[index]
                 if isinstance(element, str):
                     if element in self.__src_id_vs_dst_id_dict:
                         dict_list[index] = self.__src_id_vs_dst_id_dict.get(element)
                     elif element in self.__src_id_payload_dict:
                         dict_list[index] = self.__clone_item_to_space(item_type=self.__src_id_type_dict.get(element),
                                                                       item_id=element)
+                    elif self.__check_broken_item_id(string=element):
+                        print(f"delete a broken reference id: {element}; index {index}")
+                        del dict_list[index]
                 else:
                     self.__replace_ids(dict_list=element)
+        # # TODO log type: None, boolean, integer, float etc
         # else:
-        #     # None, boolean, integer, float etc
+        #     print(f"the type of the object is {type(dict_list)}")
 
     def __clone_child(self, src_parent_id=None, dst_parent_id=None, child_type=None, child_id_key=None):
         # source item
@@ -320,8 +351,8 @@ class Migration:
     # so you have to use a separate map to store the tenants variables
     # also put/post tenant variables uses a different url from put variables
     def __post_process_tenant_variables(self, src_id=None, dst_id=None):
-        print(f"clone {item_type_tenant_variables} from {item_type_tenants} {src_id} to {dst_id} in "
-              f"{self.__dst_space_id}")
+        print(f"clone {item_type_tenant_variables} from {item_type_tenants} {src_id} in {self.__src_space_id} "
+              f"to {dst_id} in {self.__dst_space_id}")
         src_tenant_variables = self.__src_tenant_variables_payload_dict.get(src_id)
         src_tenant_variables_copy = copy.deepcopy(src_tenant_variables)
 
@@ -353,8 +384,8 @@ class Migration:
                                                    space_id=self.__dst_space_id,
                                                    overwrite=True)
             else:
-                print("{item_type_tag_sets} {dst_tag_set.get(name_key)} already has {item_id} in {self.__dst_space_id},"
-                      " skip")
+                print(f"{item_type_tag_sets} {dst_tag_set.get(name_key)} already has {item_id} in "
+                      f"{self.__dst_space_id}, skip")
         else:
             print(f"{item_type_tag_sets} {dst_tag_set.get(name_key)} does not exist in {self.__dst_space_id}, "
                   f"so create it with {item_type_tags} {item_id}")
@@ -368,13 +399,13 @@ class Migration:
                                                         value=item_id)
         return item_id
 
-    def __load_types(self, item_types=item_types_inside_space, fake_space=False):
+    def __load_types(self, fake_space=False):
         if fake_space:
-            print(f"Reading files {item_types} from fake space {self.__src_space_id}...")
+            print(f"Reading files {self.__item_types_set} from fake space {self.__src_space_id}...")
         else:
-            print(f"Downloading {item_types} from space {self.__src_space_id}...")
+            print(f"Downloading {self.__item_types_set} from space {self.__src_space_id}...")
         actual_src_space_id = None
-        for item_type in item_types:
+        for item_type in self.__item_types_set:
             # for cloning space from another Octopus server
             if fake_space:
                 print(f"Loading {item_type} in source fake space {self.__src_space_id} from the local file...")
@@ -410,8 +441,7 @@ class Migration:
                 self.__src_id_payload_dict[canonical_tag_name] = src_tag
                 self.__src_id_type_dict[canonical_tag_name] = item_type_tags
 
-    def __initialize_maps(self, src_space_id=None, dst_space_id=None, item_types=item_types_inside_space,
-                          fake_space=False):
+    def __initialize_maps(self, src_space_id=None, dst_space_id=None, fake_space=False):
         self.__src_space_id = src_space_id
         self.__dst_space_id = dst_space_id
 
@@ -429,7 +459,7 @@ class Migration:
 
         self.__type_full_func_dict[item_type_tags] = self.__full_process_tags
 
-        actual_src_space_id = self.__load_types(item_types=item_types, fake_space=fake_space)
+        actual_src_space_id = self.__load_types(fake_space=fake_space)
 
         if fake_space:
             self.__src_id_vs_dst_id_dict[actual_src_space_id] = dst_space_id
@@ -454,10 +484,9 @@ class Migration:
                                      f"Some entities may already exist in {dst_space_id}; "
                                      f"Do you want to overwrite the existing entities? "
                                      f"If no, we will skip the existing entities. [Y/n]: ") == 'Y'
-        item_types_set = set(normal_cloneable_types + process_types +
-                             [item_type_deployment_processes, item_type_variables, item_type_tenant_variables])
-        self.__initialize_maps(src_space_id=src_space_id, dst_space_id=dst_space_id, item_types=item_types_set,
-                               fake_space=fake_space)
+        self.__item_types_set = set(normal_cloneable_types + process_types +
+                                    [item_type_deployment_processes, item_type_variables, item_type_tenant_variables])
+        self.__initialize_maps(src_space_id=src_space_id, dst_space_id=dst_space_id, fake_space=fake_space)
         print(f"creating types {process_types} from {src_space_id} to {dst_space_id}")
         for item_type in process_types:
             if item_type in normal_cloneable_types:
@@ -473,10 +502,9 @@ class Migration:
                 f"Some entities may already exist in {dst_space_id}; "
                 f"Do you want to overwrite the existing entities? "
                 f"If no, we will skip the existing entities. [Y/n]: ") == 'Y'
-        item_types_set = set(normal_cloneable_types + [item_type, item_type_deployment_processes, item_type_variables,
-                                                       item_type_tenant_variables])
-        self.__initialize_maps(src_space_id=src_space_id, dst_space_id=dst_space_id, item_types=item_types_set,
-                               fake_space=fake_space)
+        self.__item_types_set = set(normal_cloneable_types + [item_type, item_type_deployment_processes,
+                                                              item_type_variables, item_type_tenant_variables])
+        self.__initialize_maps(src_space_id=src_space_id, dst_space_id=dst_space_id, fake_space=fake_space)
         for must_have_type in must_have_types:
             self.__clone_type_to_space(item_type=must_have_type)
         if item_type in normal_cloneable_types:

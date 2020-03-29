@@ -2,8 +2,8 @@ from octopus_python_client.common import item_type_projects, get_one_type_save, 
     delete_single_item_by_name_or_id, update_single_item_save, create_single_item_from_local_file, \
     clone_single_item_from_remote_item, item_type_library_variable_sets, included_library_variable_set_ids_key, \
     id_key, name_key, put_single_item_save, get_one_type_ignore_error, get_list_items_from_all_items
-from octopus_python_client.helper import find_item, compare_lists
 from octopus_python_client.processes import clone_deployment_process
+from octopus_python_client.utilities.helper import find_item, compare_lists
 
 
 def get_all_projects(space_id=None):

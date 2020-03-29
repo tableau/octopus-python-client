@@ -16,7 +16,7 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     donor_package_step_id_key, item_type_accounts, token_key, comma_sign, space_id_key, \
     published_runbook_snapshot_id_key, item_type_scoped_user_roles, user_role_id_key, team_id_key, \
     item_type_runbook_processes, runbook_process_prefix, item_id_prefix_to_type_dict, positive_integer_regex
-from octopus_python_client.helper import find_item, save_file, find_intersection_multiple_keys_values
+from octopus_python_client.utilities.helper import find_item, save_file, find_matched_sub_list
 
 
 class Migration:
@@ -44,24 +44,24 @@ class Migration:
         # "channels" and "runbooks" are special, the name is not unique across a space;
         # we must use both name and project id to find the match
         if item_type == item_type_channels or item_type == item_type_runbooks:
-            keys_values = {name_key: item_name, project_id_key: src_item_dst_ids.get(project_id_key)}
+            match_dict = {name_key: item_name, project_id_key: src_item_dst_ids.get(project_id_key)}
         # type "releases" has no name and is unique by "Version" and "ProjectId"
         elif item_type == item_type_releases:
-            keys_values = {version_key: src_item_dst_ids.get(version_key),
-                           project_id_key: src_item_dst_ids.get(project_id_key)}
+            match_dict = {version_key: src_item_dst_ids.get(version_key),
+                          project_id_key: src_item_dst_ids.get(project_id_key)}
         # TODO cloning scopeduserroles is not working and may not be necessary; some space id is null;
         elif item_type == item_type_scoped_user_roles:
-            keys_values = {user_role_id_key: src_item_dst_ids.get(user_role_id_key),
-                           team_id_key: src_item_dst_ids.get(team_id_key)}
+            match_dict = {user_role_id_key: src_item_dst_ids.get(user_role_id_key),
+                          team_id_key: src_item_dst_ids.get(team_id_key)}
         # TODO type "artifacts" has no name and unique by Filename and ServerTaskId, so it is not cloneable
         elif item_type == item_type_artifacts:
             return find_item(lst=dst_list_items, key=file_name_key, value=src_item_dst_ids.get(file_name_key))
         elif item_name:
-            keys_values = {name_key: item_name}
+            match_dict = {name_key: item_name}
         else:
             pprint(src_item_dst_ids)
             raise ValueError(f"{item_type} does not have name or other keys for matching!")
-        intersection_list = find_intersection_multiple_keys_values(lst=dst_list_items, keys_values=keys_values)
+        intersection_list = find_matched_sub_list(lst=dst_list_items, match_dict=match_dict)
         if intersection_list and len(intersection_list) > 1:
             pprint(intersection_list)
             raise ValueError(f"For {item_name}, more than one item in {self.__dst_space_id} are found")

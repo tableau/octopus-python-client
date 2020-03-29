@@ -7,7 +7,7 @@ requirements = ["requests>=2.20.0", "PyYAML>=5.1"]
 
 setup(
     name="octopus-python-client",
-    version="1.1.2",
+    version="1.2.0",
     author="Tony Li",
     author_email="tonybest@gmail.com",
     description="Python script to manage Octopus deploy servers through the Octopus Restful APIs",
@@ -20,7 +20,7 @@ setup(
     include_package_data=True,
     entry_points={
         'console_scripts': [
-            'octopus_python_client = octopus_python_client.main:run'
+            'octopus_python_client = octopus_python_client.main:main'
         ]
     }
 )

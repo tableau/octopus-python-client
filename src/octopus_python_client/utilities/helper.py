@@ -1,11 +1,14 @@
 import copy
 import json
+import logging
 from pathlib import Path
 
 import yaml
 
 yaml_exts = (".yaml", ".yml")
 json_ext = ".json"
+
+logger = logging.getLogger(__name__)
 
 
 def find_index(lst=None, key=None, value=None):
@@ -22,24 +25,41 @@ def find_item(lst=None, key=None, value=None):
     return lst[index]
 
 
-def find_intersection_multiple_keys_values(lst=None, keys_values=None):
-    print(f"Try to find the intersection for a list from {keys_values}...")
-    current_list = copy.deepcopy(lst)
-    for key, value in keys_values.items():
-        temp_list = []
-        for i, dic in enumerate(current_list):
-            if dic.get(key) == value:
-                temp_list.append(current_list[i])
-        current_list = copy.deepcopy(temp_list)
-    if current_list:
-        print(f"{len(current_list)} items are found from the intersection of the list.")
+def find_matched_sub_list(lst=None, match_dict=None):
+    print(f"Try to find the matched sub-list for a list against {match_dict}...")
+    list_copy = copy.deepcopy(lst)
+    # we must do reversely to avoid unexpected result on deleting by index
+    for index in range(len(list_copy) - 1, -1, -1):
+        print(f"working on the index {index} of the input list")
+        dic = list_copy[index]
+        for match_key, match_value in match_dict.items():
+            if dic.get(match_key) != match_value:
+                del list_copy[index]
+                break
+    if list_copy:
+        print(f"{len(list_copy)} matched items are found from the input list.")
     else:
-        print(f"The intersection of the list NOT found")
-    return current_list
+        print(f"no matched items are found from the input list.")
+    return list_copy
+
+
+def replace_list_new_value(lst=None, match_dict=None, replace_dict=None):
+    logger.info(f"replace with {replace_dict} in list matching the input {match_dict}")
+    for index, dic in enumerate(lst):
+        logger.info(f"working on the index {index} of the input list")
+        match = True
+        for match_key, match_value in match_dict.items():
+            if dic.get(match_key) != match_value:
+                match = False
+                break
+        if match:
+            logger.info(f"index at {index} is a match; replace with {replace_dict}")
+            for replace_key, replace_value in replace_dict.items():
+                dic[replace_key] = replace_value
 
 
 def load_json_file(file_path_name=None):
-    print(f"loading {file_path_name} ...")
+    logger.info(f"loading {file_path_name} ...")
     if Path(file_path_name).is_file():
         with open(file_path_name) as f:
             return json.load(f)

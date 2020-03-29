@@ -1,9 +1,11 @@
 import copy
 import os
+import time
 from pprint import pprint
 
-from octopus_python_client.helper import compare_overwrite, find_item, compare_dicts, load_file, save_file
-from octopus_python_client.send_requests_to_octopus import call_octopus, operation_get, operation_post, operation_put, \
+from octopus_python_client.utilities.helper import compare_overwrite, find_item, compare_dicts, load_file, save_file
+from octopus_python_client.utilities.send_requests_to_octopus import call_octopus, operation_get, operation_post, \
+    operation_put, \
     operation_delete
 
 # constants
@@ -14,6 +16,7 @@ comma_sign = ","
 dot_sign = "."
 double_hyphen = "--"
 environments_prefix = "Environments"
+executing_string = "Executing"
 file_configuration = "configuration.json"
 folder_outer_spaces = "outer_spaces"
 folder_configurations = "configurations"
@@ -22,6 +25,7 @@ runbook_process_prefix = "RunbookProcess"
 slash_all = "/all"
 slash_sign = "/"
 space_map = "space_map"
+success_string = "Success"
 tenants_prefix = "Tenants"
 underscore_sign = "_"
 url_all_pages = "?skip=0&take=2147483647"
@@ -35,7 +39,9 @@ api_key_key = "api_key"
 canonical_tag_name_key = "CanonicalTagName"
 channel_id_key = "ChannelId"
 cloned_from_tenant_id_key = "ClonedFromTenantId"
+comments_key = "Comments"
 deployment_process_id_key = 'DeploymentProcessId'
+description_key = "Description"
 donor_package_key = "DonorPackage"
 donor_package_step_id_key = "DonorPackageStepId"
 environment_id_key = "EnvironmentId"
@@ -48,10 +54,13 @@ items_key = 'Items'
 life_cycle_id_key = "LifecycleId"
 name_key = 'Name'
 new_value_key = "NewValue"
+next_version_increment_key = "NextVersionIncrement"
 octopus_endpoint_key = "octopus_endpoint"
 octopus_name_key = "octopus_name"
 owner_id_key = "OwnerId"
+package_id_key = "PackageId"
 package_reference_name_key = "PackageReferenceName"
+packages_key = "Packages"
 password_key = "password"
 project_group_id_key = "ProjectGroupId"
 project_id_key = "ProjectId"
@@ -62,9 +71,11 @@ runbook_id_key = "RunbookId"
 runbook_process_id_key = "RunbookProcessId"
 secret_key_key = "SecretKey"
 selected_packages_key = "SelectedPackages"
+state_key = "State"
 steps_key = 'Steps'
 space_id_key = "SpaceId"
 tags_key = "Tags"
+task_id_key = "TaskId"
 team_id_key = "TeamId"
 tenant_id_key = "TenantId"
 token_key = "Token"
@@ -188,22 +199,20 @@ class Config:
         self.api_key = None
         self.user_name = None
         self.password = None
-        self.code_path = os.path.dirname(os.path.abspath(__file__))
-        self.current_path = os.getcwd()
         self.overwrite = False
+        self.current_path = None
         self.get_config()
 
     def get_config(self):
-        print("********** Octopus deploy python client tool **********")
-        print('code_path: ' + self.code_path)
-        print('current working path: ' + self.current_path)
-        config_file = os.path.join(self.code_path, folder_configurations, file_configuration)
+        code_path = os.path.dirname(os.path.abspath(__file__))
+        config_file = os.path.join(code_path, folder_configurations, file_configuration)
         config_dict = load_file(config_file)
         self.octopus_endpoint = config_dict.get(octopus_endpoint_key)
         self.octopus_name = config_dict.get(octopus_name_key)
         self.api_key = config_dict.get(api_key_key)
         self.user_name = config_dict.get(user_name_key)
         self.password = config_dict.get(password_key)
+        self.current_path = os.getcwd()
 
 
 config = Config()
@@ -214,12 +223,12 @@ def get_list_ids_one_type(item_type=None, space_id=None):
     return [item.get(id_key) for item in list_items]
 
 
-def verify_space(space_id_or_name=None):
+def verify_space(space_id_name=None):
     list_spaces = get_one_type_to_list(item_type=item_type_spaces)
-    space = find_item(lst=list_spaces, key=id_key, value=space_id_or_name)
+    space = find_item(lst=list_spaces, key=id_key, value=space_id_name)
     if space:
         return space.get(id_key)
-    space = find_single_item_from_list_by_name(list_items=list_spaces, item_name=space_id_or_name)
+    space = find_single_item_from_list_by_name(list_items=list_spaces, item_name=space_id_name)
     if space:
         return space.get(id_key)
     return None
@@ -420,7 +429,7 @@ def get_types_save(item_types_comma_delimited=None, space_id=None):
 def get_spaces_save(item_types_comma_delimited=None, space_id_or_name_comma_delimited=None):
     if space_id_or_name_comma_delimited:
         list_space_ids_or_names = space_id_or_name_comma_delimited.split(comma_sign)
-        list_space_ids = [verify_space(space_id_or_name=space_id_or_name) for space_id_or_name in
+        list_space_ids = [verify_space(space_id_name=space_id_or_name) for space_id_or_name in
                           list_space_ids_or_names]
     else:
         list_space_ids = get_list_ids_one_type(item_type=item_type_spaces) + [None]
@@ -885,3 +894,25 @@ def get_list_variables_by_set_name_or_id(set_name=None, set_id=None, space_id=No
 def get_one_type_to_list(item_type=None, space_id=None):
     all_items = get_one_type_ignore_error(item_type=item_type, space_id=space_id)
     return get_list_items_from_all_items(all_items=all_items)
+
+
+def get_task_status(task_id=None, space_id=None):
+    print(f"check the status of task {task_id} in space {space_id}")
+    task = get_or_delete_single_item_by_id(item_type=item_type_tasks, item_id=task_id, space_id=space_id)
+    save_single_item(item_type=item_type_tasks, item=task, space_id=space_id)
+    print(f"the task's status is {task.get(state_key)} and description is: {task.get(description_key)}")
+    return task.get(state_key)
+
+
+def wait_task(task_id=None, space_id=None, time_limit_second=600):
+    print(f"wait for task {task_id} in space {space_id} to complete until time out at {time_limit_second} seconds")
+    counter = 0
+    while get_task_status(task_id=task_id, space_id=space_id) == executing_string:
+        if counter > time_limit_second:
+            print(f"task {task_id} takes longer than {time_limit_second} seconds and times out")
+            return executing_string
+        time.sleep(1)
+        counter += 1
+    status = get_task_status(task_id=task_id, space_id=space_id)
+    print(f"task {task_id} in space {space_id} completes with status {status} at {counter} seconds")
+    return status

@@ -3,7 +3,7 @@ import copy
 from octopus_python_client.common import get_one_type_save, item_type_deployment_processes, get_child_item_save, \
     item_type_projects, update_child_item_from_local_save, clone_child_item_from_another_parent_save, get_child_item, \
     put_child_item_save, deployment_process_id_key, steps_key, name_key, id_key, actions_key
-from octopus_python_client.helper import find_index, find_item
+from octopus_python_client.utilities.helper import find_index, find_item
 
 
 def get_all_deployment_processes(space_id=None):

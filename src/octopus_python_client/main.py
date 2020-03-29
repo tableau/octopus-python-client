@@ -1,4 +1,6 @@
 import argparse
+import logging
+import os
 
 from octopus_python_client.common import config, get_one_type_save, get_single_item_by_name_or_id_save, \
     update_single_item_save, create_single_item_from_local_file, item_type_deployment_processes, \
@@ -6,10 +8,18 @@ from octopus_python_client.common import config, get_one_type_save, get_single_i
     update_child_item_from_local_save, clone_child_item_from_another_parent_save, get_types_save, \
     item_types_only_ourter_space, item_types_inside_space, deployment_process_id_key, steps_key, \
     merge_single_item_save, delete_one_type, api_key_key, octopus_endpoint_key, octopus_name_key, user_name_key, \
-    password_key, double_hyphen, verify_space, get_spaces_save
+    password_key, double_hyphen, verify_space, get_spaces_save, get_task_status, wait_task
 from octopus_python_client.migration import Migration
 from octopus_python_client.processes import clone_process_step, delete_process_step
 from octopus_python_client.projects import clone_project, delete_project, get_project, project_update_variable_sets
+from octopus_python_client.release_deployment import ReleaseDeployment
+
+logging.basicConfig(filename=os.path.join(os.getcwd(), "octopus_python_client.log"),
+                    filemode='a',
+                    format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+                    datefmt='%H:%M:%S',
+                    level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class Actions:
@@ -36,7 +46,14 @@ class Actions:
     action_clone_space_item = "clone_space_item"
     # clone a few types from one space to another space
     action_clone_space = "clone_space"
-    clone_space_actions = {action_clone_space_item, action_clone_space}
+    action_task_status = "task_status"
+    action_wait_task = "wait_task"
+    action_create_release = "create_release"
+    action_create_deployment = "create_deployment"
+    action_create_release_deployment = "create_release_deployment"
+
+
+clone_space_actions = {Actions.action_clone_space_item, Actions.action_clone_space}
 
 
 def _parse_args():
@@ -82,14 +99,20 @@ def _parse_args():
     parser.add_argument("-rs", "--remove_suffix",
                         help="if present, remove suffix from variable sets name, otherwise add suffix",
                         action='store_true')
-    parser.add_argument("-rn", "--release_number", help="release number, it could a build number from QE team")
+    parser.add_argument("-ti", "--task_id", help="task id, like ServerTasks-1234")
+    parser.add_argument("-tl", "--time_limit_second", help="time limit in second")
+    parser.add_argument("-rv", "--release_version", help="release version for creating a new release")
     parser.add_argument("-pj", "--project_name", help="project name")
     parser.add_argument("-cn", "--channel_name", help="channel name")
-    parser.add_argument("-bv", "--branch_version", help="service branch version, like 'near.20.0224.2005'")
     parser.add_argument("-nt", "--notes", help="notes")
+    parser.add_argument("-pv", "--package_version_json",
+                        help="user selected package versions, e.g. \""
+                             r"{\"package.near\": \"20.0225.1714\", \"package.main\": \"20.0325.0839\"}" "\"")
+    parser.add_argument("-vs", "--variable_set_name", help="variable set name")
     parser.add_argument("-ri", "--release_id", help="release id for deployment")
     parser.add_argument("-en", "--environment_name", help="environment name, like Integration")
     parser.add_argument("-tn", "--tenant_name", help="tenant name, like cd-near")
+    parser.add_argument("-cm", "--comments", help="comments")
 
     args, unknown = parser.parse_known_args()
     return args
@@ -120,11 +143,12 @@ def run():
 
     print('config.octopus_endpoint: ' + config.octopus_endpoint)
     print('config.octopus_name: ' + config.octopus_name)
+    print('config.current_path: ' + config.current_path)
 
     # verify space id/name
     dst_space_id = None
     if args.dst_space_id_name:
-        dst_space_id = verify_space(space_id_or_name=args.dst_space_id_name)
+        dst_space_id = verify_space(space_id_name=args.dst_space_id_name)
         if dst_space_id:
             print(f"destination space_id is: {dst_space_id}")
         else:
@@ -134,10 +158,10 @@ def run():
     space_id = None
     fake_space = False
     if args.space_id_name:
-        space_id = verify_space(space_id_or_name=args.space_id_name)
+        space_id = verify_space(space_id_name=args.space_id_name)
         if space_id:
             print(f"octopus space_id is: {space_id}")
-        elif args.action not in Actions.clone_space_actions:
+        elif args.action not in clone_space_actions:
             raise ValueError(f"the space id/name {args.space_id_name} you specified does not exist "
                              f"or you may not have permission to access it")
         elif input(f"Are you sure you want to {args.action} from nonexistent space {args.space_id_name} [Y/n]?") == 'Y':
@@ -183,28 +207,27 @@ def run():
                             child_type=args.child_type, space_id=space_id)
     elif args.action == Actions.action_update_child:
         update_child_item_from_local_save(parent_name=args.parent_name, parent_type=args.parent_type,
-                                          child_id_key=args.child_id_key, child_type=args.child_type,
-                                          space_id=space_id)
+                                          child_id_key=args.child_id_key, child_type=args.child_type, space_id=space_id)
     elif args.action == Actions.action_clone_child:
-        clone_child_item_from_another_parent_save(parent_name=args.parent_name, base_parent_name=args.base_parent_name,
-                                                  parent_type=args.parent_type, child_id_key=args.child_id_key,
-                                                  child_type=args.child_type, sub_item_key=args.sub_item_key,
-                                                  space_id=space_id)
+        clone_child_item_from_another_parent_save(
+            parent_name=args.parent_name, base_parent_name=args.base_parent_name, parent_type=args.parent_type,
+            child_id_key=args.child_id_key, child_type=args.child_type, sub_item_key=args.sub_item_key,
+            space_id=space_id)
     elif args.action == Actions.action_clone_process_step:
-        clone_process_step(project_literal_name=args.parent_name, step_name=args.step_name,
+        clone_process_step(project_literal_name=args.project_name, step_name=args.step_name,
                            base_step_name=args.base_step_name, prev_step_name=args.prev_step_name,
                            space_id=space_id)
     elif args.action == Actions.action_delete_process_step:
-        delete_process_step(project_literal_name=args.parent_name, step_name=args.step_name, space_id=space_id)
+        delete_process_step(project_literal_name=args.project_name, step_name=args.step_name, space_id=space_id)
     elif args.action == Actions.action_clone_project:
-        clone_project(project_literal_name=args.item_name, base_project_name=args.base_item_name,
+        clone_project(project_literal_name=args.project_name, base_project_name=args.base_item_name,
                       space_id=space_id)
     elif args.action == Actions.action_delete_project:
-        delete_project(project_literal_name=args.item_name, space_id=space_id)
+        delete_project(project_literal_name=args.project_name, space_id=space_id)
     elif args.action == Actions.action_get_project:
-        get_project(project_literal_name=args.item_name, space_id=space_id)
+        get_project(project_literal_name=args.project_name, space_id=space_id)
     elif args.action == Actions.action_project_update_variable_sets:
-        project_update_variable_sets(project_literal_name=args.item_name, suffix=args.suffix, space_id=space_id,
+        project_update_variable_sets(project_literal_name=args.project_name, suffix=args.suffix, space_id=space_id,
                                      remove_suffix=args.remove_suffix)
     elif args.action == Actions.action_clone_space:
         Migration().clone_space(src_space_id=space_id, dst_space_id=dst_space_id,
@@ -212,10 +235,35 @@ def run():
     elif args.action == Actions.action_clone_space_item:
         Migration().clone_space_item(src_space_id=space_id, dst_space_id=dst_space_id, item_type=args.item_type,
                                      item_name=args.item_name, item_id=args.item_id, fake_space=fake_space)
+    elif args.action == Actions.action_task_status:
+        get_task_status(task_id=args.task_id, space_id=space_id)
+    elif args.action == Actions.action_wait_task:
+        wait_task(task_id=args.task_id, space_id=space_id, time_limit_second=args.time_limit_second)
+    elif args.action == Actions.action_create_release:
+        ReleaseDeployment.create_release_direct(
+            release_version=args.release_version, project_name=args.project_name, channel_name=args.channel_name,
+            notes=args.notes, space_id_name=space_id, package_version_json=args.package_version_json,
+            packages_variable_set_name=args.variable_set_name)
+    elif args.action == Actions.action_create_deployment:
+        ReleaseDeployment.create_deployment_direct(
+            release_id=args.release_id, environment_name=args.environment_name, tenant_name=args.tenant_name,
+            space_id_name=space_id, comments=args.comments)
+    elif args.action == Actions.action_create_release_deployment:
+        ReleaseDeployment.create_release_deployment(
+            release_version=args.release_version, project_name=args.project_name, channel_name=args.channel_name,
+            notes=args.notes, space_id_name=space_id, package_version_json=args.package_version_json,
+            packages_variable_set_name=args.variable_set_name, environment_name=args.environment_name,
+            tenant_name=args.tenant_name, comments=args.comments)
 
     else:
         raise ValueError("We only support operations: " + str(Actions.__dict__.values()))
 
 
-if __name__ == "__main__":
+def main():
+    logger.info("********** Octopus deploy python client tool - start **********")
     run()
+    logger.info("********** Octopus deploy python client tool - end **********")
+
+
+if __name__ == "__main__":
+    main()

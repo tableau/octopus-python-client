@@ -1,6 +1,5 @@
-import json
 import logging
-from pprint import pprint, pformat
+from pprint import pformat
 
 from octopus_python_client.common import request_octopus_item, item_type_deployment_processes, verify_space, \
     item_type_projects, get_single_item_by_name, id_key, deployment_process_id_key, item_type_channels, \
@@ -8,15 +7,15 @@ from octopus_python_client.common import request_octopus_item, item_type_deploym
     item_type_feeds, item_type_packages, version_key, items_key, get_list_variables_by_set_name_or_id, name_key, \
     value_key, project_id_key, next_version_increment_key, release_notes_key, channel_id_key, selected_packages_key, \
     item_type_releases, save_single_item, item_type_deployments, item_type_tenants, item_type_environments, \
-    get_item_id_by_name, tenant_id_key, environment_id_key, release_id_key, comments_key
-from octopus_python_client.utilities.helper import replace_list_new_value
+    get_item_id_by_name, tenant_id_key, environment_id_key, release_id_key, comments_key, log_info_print
+from octopus_python_client.utilities.helper import replace_list_new_value, get_dict_from_str
 from octopus_python_client.utilities.send_requests_to_octopus import operation_post
 
 logger = logging.getLogger(__name__)
 
 
 class ReleaseDeployment:
-    def __init__(self, project_name=None, channel_name=None, notes=None, space_id_name=None, package_version_json=None,
+    def __init__(self, project_name=None, channel_name=None, notes=None, space_id_name=None, package_version_dict=None,
                  packages_variable_set_name=None):
         assert space_id_name, "space name/id must not be empty!"
         assert project_name, "project name must not be empty!"
@@ -42,10 +41,12 @@ class ReleaseDeployment:
 
         # package versions read from a variable set, e.g. {"Name": "package.near", "Value": "20.0225.1714"}
         self._packages_variable_set_name = packages_variable_set_name
-        # user selected package versions, e.g. {"package.near": "20.0225.1714"}
+
+        # user selected package versions, e.g. "{'package.near': '20.0225.1714'}"
         self._package_version_dict = None
-        if package_version_json:
-            self._package_version_dict = json.loads(package_version_json)
+        if package_version_dict:
+            logger.info(f"converting package version {package_version_dict} to dict...")
+            self._package_version_dict = get_dict_from_str(string=package_version_dict)
 
         self._template = None
         self._selected_packages = None
@@ -98,13 +99,11 @@ class ReleaseDeployment:
             release_version = self._template.get(next_version_increment_key)
         self._release_request_payload[version_key] = release_version
         self._release_request_payload[selected_packages_key] = self._selected_packages
-        print("the request release payload is")
-        pprint(self._release_request_payload)
+        logger.info("the request release payload is")
         logger.info(pformat(self._release_request_payload))
         self._release_response = request_octopus_item(payload=self._release_request_payload, space_id=self._space_id,
                                                       address=item_type_releases, action=operation_post)
-        print("the response release payload is")
-        pprint(self._release_response)
+        logger.info("the response release payload is")
         logger.info(pformat(self._release_response))
         save_single_item(item_type=item_type_releases, item=self._release_response, space_id=self._space_id)
         self._release_id = self._release_response.get(id_key)
@@ -113,15 +112,13 @@ class ReleaseDeployment:
     @staticmethod
     def create_deployment_direct(release_id=None, environment_name=None, tenant_name=None, space_id_name=None,
                                  comments=None):
+        logger.info(f"creating a deployment for {release_id} in space {space_id_name} with environment "
+                    f"{environment_name}, tenant {tenant_name} and comments: {comments}")
+
         assert release_id, "release_id must not be empty!"
         assert space_id_name, "space id/name must not be empty!"
         assert environment_name, "environment_name must not be empty!"
         assert tenant_name, "tenant_name must not be empty!"
-
-        print(f"create a deployment for {release_id} in space {space_id_name} with environment "
-              f"{environment_name} and tenant {tenant_name}")
-        logger.info(f"create a deployment for {release_id} in space {space_id_name} with environment "
-                    f"{environment_name} and tenant {tenant_name}")
 
         space_id = verify_space(space_id_name=space_id_name)
         assert space_id, f"Space {space_id_name} cannot be found or you do not have permission to access!"
@@ -134,14 +131,12 @@ class ReleaseDeployment:
                                                                          item_name=tenant_name,
                                                                          space_id=space_id),
                                       comments_key: comments}
-        print("the request deployment payload is")
-        pprint(deployment_request_payload)
+        logger.info("the request deployment payload is")
         logger.info(pformat(deployment_request_payload))
         deployment_response_payload = request_octopus_item(payload=deployment_request_payload, space_id=space_id,
                                                            address=item_type_deployments, action=operation_post)
-        print("the response deployment payload is")
-        pprint(deployment_response_payload)
-        logger.info(pformat(deployment_response_payload))
+        logger.info("the response deployment payload is")
+        log_info_print(local_logger=logger, msg=deployment_response_payload)
         save_single_item(item_type=item_type_deployments, item=deployment_response_payload, space_id=space_id)
         return deployment_response_payload
 
@@ -165,8 +160,9 @@ class ReleaseDeployment:
                               space_id_name=None, package_version_json=None, packages_variable_set_name=None):
         release = ReleaseDeployment(
             project_name=project_name, channel_name=channel_name, notes=notes, space_id_name=space_id_name,
-            package_version_json=package_version_json, packages_variable_set_name=packages_variable_set_name)
+            package_version_dict=package_version_json, packages_variable_set_name=packages_variable_set_name)
         release.create_release(release_version=release_version)
+        log_info_print(local_logger=logger, msg=release.release_response)
         return release
 
     @staticmethod

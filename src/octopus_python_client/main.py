@@ -13,6 +13,7 @@ from octopus_python_client.migration import Migration
 from octopus_python_client.processes import clone_process_step, delete_process_step
 from octopus_python_client.projects import clone_project, delete_project, get_project, project_update_variable_sets
 from octopus_python_client.release_deployment import ReleaseDeployment
+from octopus_python_client.utilities.helper import log_raise_value_error
 
 logging.basicConfig(filename=os.path.join(os.getcwd(), "octopus_python_client.log"),
                     filemode='a',
@@ -73,6 +74,7 @@ def _parse_args():
                         help="password for octopus; either api_key or user_name and password are required")
     parser.add_argument("-a", "--action", help=str(Actions.__dict__.values()), required=True)
     parser.add_argument("-ow", "--overwrite", help="if present, overwrite = True", action='store_true')
+    parser.add_argument("-ns", "--no_stdout", help="if present, no_stdout = True, means no stdout", action='store_true')
     parser.add_argument("-ts", "--item_types",
                         help='if not item_types and not octopus_space_id, get all item types '
                              'regardless whether they are above Spaces; if (not item_types) and octopus_space_id, '
@@ -137,30 +139,32 @@ def run():
         config.user_name = args.user_name
     if args.password:
         config.password = args.password
-
     if not config.api_key and not (config.user_name and config.password):
         raise ValueError(f"either api_key or user_name and password are required")
 
-    print('config.octopus_endpoint: ' + config.octopus_endpoint)
-    print('config.octopus_name: ' + config.octopus_name)
-    print('config.current_path: ' + config.current_path)
+    if args.overwrite:
+        config.overwrite = args.overwrite
+    if args.no_stdout:
+        config.no_stdout = args.no_stdout
+
+    logger.info(config.__dict__)
 
     # verify space id/name
     dst_space_id = None
     if args.dst_space_id_name:
         dst_space_id = verify_space(space_id_name=args.dst_space_id_name)
         if dst_space_id:
-            print(f"destination space_id is: {dst_space_id}")
+            logger.info(f"destination space_id is: {dst_space_id}")
         else:
-            raise ValueError(f"the destination space id/name {args.dst_space_id_name} you specified does not exist "
-                             f"or you may not have permission to access it")
+            raise ValueError(f"the destination space id/name {args.dst_space_id_name} you specified does not exist or "
+                             f"you may not have permission to access it")
 
     space_id = None
     fake_space = False
     if args.space_id_name:
         space_id = verify_space(space_id_name=args.space_id_name)
         if space_id:
-            print(f"octopus space_id is: {space_id}")
+            logger.info(f"octopus space_id is: {space_id}")
         elif args.action not in clone_space_actions:
             raise ValueError(f"the space id/name {args.space_id_name} you specified does not exist "
                              f"or you may not have permission to access it")
@@ -172,9 +176,6 @@ def run():
     elif args.action != Actions.action_get_spaces \
             and input(f"Are you sure you want to run a command against null space [Y/n]? ") != 'Y':
         return
-
-    if args.overwrite:
-        config.overwrite = args.overwrite
 
     if args.action == Actions.action_get_spaces:
         get_spaces_save(item_types_comma_delimited=args.item_types, space_id_or_name_comma_delimited=args.spaces)
@@ -256,7 +257,7 @@ def run():
             tenant_name=args.tenant_name, comments=args.comments)
 
     else:
-        raise ValueError("We only support operations: " + str(Actions.__dict__.values()))
+        log_raise_value_error(local_logger=logger, err="We only support actions: " + str(Actions.__dict__.values()))
 
 
 def main():

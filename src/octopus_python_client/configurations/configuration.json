@@ -3,5 +3,7 @@
   "octopus_name": "octopus_demo_server",
   "user_name": "guest",
   "password": "guest",
-  "api_key": null
+  "api_key": null,
+  "overwrite": false,
+  "no_stdout": false
 }

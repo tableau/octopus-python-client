@@ -101,7 +101,6 @@ def _parse_args():
     parser.add_argument("-rs", "--remove_suffix",
                         help="if present, remove suffix from variable sets name, otherwise add suffix",
                         action='store_true')
-    parser.add_argument("-ti", "--task_id", help="task id, like ServerTasks-1234")
     parser.add_argument("-tl", "--time_limit_second", help="time limit in second")
     parser.add_argument("-rv", "--release_version", help="release version for creating a new release")
     parser.add_argument("-pj", "--project_name", help="project name")
@@ -237,9 +236,9 @@ def run():
         Migration().clone_space_item(src_space_id=space_id, dst_space_id=dst_space_id, item_type=args.item_type,
                                      item_name=args.item_name, item_id=args.item_id, fake_space=fake_space)
     elif args.action == Actions.action_task_status:
-        get_task_status(task_id=args.task_id, space_id=space_id)
+        get_task_status(task_id=args.item_id, space_id=space_id)
     elif args.action == Actions.action_wait_task:
-        wait_task(task_id=args.task_id, space_id=space_id, time_limit_second=args.time_limit_second)
+        wait_task(task_id=args.item_id, space_id=space_id, time_limit_second=args.time_limit_second)
     elif args.action == Actions.action_create_release:
         ReleaseDeployment.create_release_direct(
             release_version=args.release_version, project_name=args.project_name, channel_name=args.channel_name,

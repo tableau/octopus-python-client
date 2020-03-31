@@ -5,18 +5,16 @@ from time import gmtime, strftime
 
 from octopus_python_client.common import name_key, tags_key, id_key, item_type_tag_sets, post_single_item_save, \
     item_type_projects, get_list_items_from_file, item_type_deployment_processes, deployment_process_id_key, config, \
-    put_single_item_save, normal_cloneable_types, \
-    get_list_items_from_all_items, version_key, must_have_types, item_type_library_variable_sets, item_type_variables, \
-    variable_set_id_key, get_or_delete_single_item_by_id, item_type_tenant_variables, canonical_tag_name_key, \
-    item_type_tags, tenant_id_key, item_type_migration, space_map, get_local_single_item_file, put_single_item, \
-    item_type_tenants, slash_sign, underscore_sign, item_type_feeds, \
-    secret_key_key, new_value_key, hyphen_sign, item_type_channels, project_id_key, \
-    item_type_releases, item_type_artifacts, file_name_key, put_post_tenant_variables_save, \
-    get_one_type_to_list, runbook_process_id_key, item_type_runbooks, \
-    item_type_accounts, token_key, comma_sign, space_id_key, \
-    published_runbook_snapshot_id_key, item_type_scoped_user_roles, user_role_id_key, team_id_key, \
-    item_type_runbook_processes, runbook_process_prefix, item_id_prefix_to_type_dict, positive_integer_regex, \
-    prepare_project_versioning_strategy, log_info_print, get_one_type_ignore_error, get_single_item_by_name_or_id
+    put_single_item_save, normal_cloneable_types, get_list_items_from_all_items, version_key, must_have_types, \
+    item_type_library_variable_sets, item_type_variables, variable_set_id_key, get_or_delete_single_item_by_id, \
+    item_type_tenant_variables, canonical_tag_name_key, item_type_tags, tenant_id_key, item_type_migration, space_map, \
+    get_local_single_item_file, put_single_item, item_type_tenants, slash_sign, underscore_sign, item_type_feeds, \
+    secret_key_key, new_value_key, hyphen_sign, item_type_channels, project_id_key, item_type_releases, \
+    item_type_artifacts, file_name_key, put_post_tenant_variables_save, get_one_type_to_list, runbook_process_id_key, \
+    item_type_runbooks, item_type_accounts, token_key, comma_sign, space_id_key, published_runbook_snapshot_id_key, \
+    item_type_scoped_user_roles, user_role_id_key, team_id_key, item_type_runbook_processes, runbook_process_prefix, \
+    item_id_prefix_to_type_dict, positive_integer_regex, prepare_project_versioning_strategy, log_info_print, \
+    get_one_type_ignore_error, get_single_item_by_name_or_id, log_warn_print
 from octopus_python_client.utilities.helper import find_item, save_file, find_matched_sub_list, log_raise_value_error
 
 logger = logging.getLogger(__name__)
@@ -149,31 +147,41 @@ class Migration:
         return self.__create_item_to_space(item_type=item_type, src_item=src_item)
 
     def __create_item_to_space(self, item_type=None, src_item=None):
-        item_badge = src_item.get(name_key) if src_item.get(name_key) else src_item.get(id_key)
-        log_info_print(local_logger=logger, msg=f"cloning {item_type} {item_badge} to space {self.__dst_space_id}")
-        logger.info(f"preprocessing {item_type} {item_badge} with the new references in {self.__dst_space_id}...")
+        src_id_value = src_item.get(id_key)
+        src_item_name = src_item.get(name_key)
+
+        if src_id_value in self.__src_id_vs_dst_id_dict:
+            dst_id_value = self.__src_id_vs_dst_id_dict.get(src_id_value)
+            log_info_print(local_logger=logger,
+                           msg=f"{item_type} {src_item_name} {src_id_value} has already been cloned to space "
+                               f"{self.__dst_space_id} as {dst_id_value} in this session; skip it")
+            return dst_id_value
+
+        log_info_print(local_logger=logger, msg=f"cloning {item_type} {src_item_name} {src_id_value} to space "
+                                                f"{self.__dst_space_id}")
+        logger.info(f"preprocessing {item_type} {src_id_value} with the new references in {self.__dst_space_id}...")
         # do not modify the items in memory
         src_item_copy = copy.deepcopy(src_item)
 
         # some type needs additional prep-processing
         prep_process = self.__type_prep_func_dict.get(item_type)
         if prep_process:
-            logger.info(f"special preprocessing for {item_type} {item_badge} with function {prep_process}")
+            logger.info(f"special preprocessing for {item_type} {src_id_value} with function {prep_process}")
             prep_process(src_item=src_item_copy)
 
         # since the destination "Id: Self-2" has not been created and saved into map
         # we do not want to recursively replace the "Id: Self-1" of the payload;
         # it would cause infinite stack and overflow
-        src_id_value = src_item_copy.pop(id_key, None)
+        src_item_copy.pop(id_key, None)
 
         self.__replace_ids(dict_list=src_item_copy)
 
-        logger.info(f"check if {item_type} {item_badge} already exists in {self.__dst_space_id}")
+        logger.info(f"check if {item_type} {src_id_value} already exists in {self.__dst_space_id}")
         dst_item = self.__find_matched_dst_item_by_src_item(src_item_with_dst_ids=src_item_copy, item_type=item_type)
         dst_item_exist = True if dst_item else False
         if dst_item_exist:
             if config.overwrite:
-                logger.info(f"{self.__dst_space_id} already has {item_type} {item_badge}, overwriting it...")
+                logger.info(f"{self.__dst_space_id} already has {item_type} {src_id_value}, overwriting it...")
                 src_item_copy[id_key] = dst_item.get(id_key)
 
                 # TODO bug in Octopus: PUT a runbook with null RunbookProcessId will remove RunbookProcessId from dst
@@ -185,9 +193,9 @@ class Migration:
                 dst_item = put_single_item_save(item_type=item_type, payload=src_item_copy,
                                                 space_id=self.__dst_space_id)
             else:
-                logger.info(f"{self.__dst_space_id} already has {item_type} {item_badge}, skipping it...")
+                logger.info(f"{self.__dst_space_id} already has {item_type} {src_id_value}, skipping it...")
         else:
-            logger.info(f"{self.__dst_space_id} does not have {item_type} {item_badge}, so creating it...")
+            logger.info(f"{self.__dst_space_id} does not have {item_type} {src_id_value}, so creating it...")
             dst_item = post_single_item_save(item_type=item_type, payload=src_item_copy, space_id=self.__dst_space_id)
 
         dst_id_value = dst_item.get(id_key)
@@ -197,7 +205,7 @@ class Migration:
 
         post_process = self.__type_post_func_dict.get(item_type)
         if post_process and (not dst_item_exist or config.overwrite):
-            logger.info(f"Additional processing for {item_type} {item_badge} with function {post_process}")
+            logger.info(f"Additional processing for {item_type} {src_id_value} with function {post_process}")
             post_process(src_id=src_id_value, dst_id=dst_id_value)
 
         return dst_id_value
@@ -206,10 +214,10 @@ class Migration:
         if not item_type:
             raise ValueError("item_type must not be empty!")
         log_info_print(local_logger=logger,
-                       msg=f"---- cloning type {item_type} from {self.__src_space_id} to {self.__dst_space_id} -----")
+                       msg=f"cloning items in type {item_type} from {self.__src_space_id} to {self.__dst_space_id}")
         src_list_items = self.__type_src_list_items_dict.get(item_type)
         if not src_list_items:
-            logger.warning(f"***** {item_type} has no items in {self.__src_space_id}, so skip processing it *****")
+            logger.warning(f"{item_type} has no items in {self.__src_space_id}, so skip processing it")
             return
 
         for src_item in src_list_items:
@@ -230,7 +238,8 @@ class Migration:
         for id_prefix, item_type in item_id_prefix_to_type_dict.items():
             pattern = r"{}".format("^" + id_prefix + positive_integer_regex)
             if re.match(pattern, string):
-                logger.warning(f"Please remove the broken reference id {string} in source space {self.__src_space_id}")
+                log_warn_print(local_logger=logger, msg=f"***** Please remove the broken reference id {string} in "
+                                                        f"source space {self.__src_space_id} *****")
                 return True
         return False
 
@@ -509,7 +518,7 @@ class Migration:
             process_types = normal_cloneable_types
         log_info_print(local_logger=logger, msg=f"cloning {process_types} from {src_space_id} to {dst_space_id}...")
         if not config.overwrite:
-            config.overwrite = input(f"***** You are cloning {process_types} from {src_space_id} to {dst_space_id}; "
+            config.overwrite = input(f"You are cloning {process_types} from {src_space_id} to {dst_space_id}; "
                                      f"Some entities may already exist in {dst_space_id}; "
                                      f"Do you want to overwrite the existing entities? "
                                      f"If no, we will skip the existing entities. [Y/n]: ") == 'Y'
@@ -528,7 +537,7 @@ class Migration:
                        msg=f"cloning {item_type} {item_badge} from {src_space_id} to {dst_space_id}...")
         if not config.overwrite:
             config.overwrite = input(
-                f"***** You are cloning {item_type} {item_badge} from {src_space_id} to {dst_space_id}; "
+                f"You are cloning {item_type} {item_badge} from {src_space_id} to {dst_space_id}; "
                 f"Some entities may already exist in {dst_space_id}; "
                 f"Do you want to overwrite the existing entities? "
                 f"If no, we will skip the existing entities. [Y/n]: ") == 'Y'

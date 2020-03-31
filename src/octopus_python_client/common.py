@@ -228,8 +228,18 @@ class Config:
 config = Config()
 
 
-def log_info_print(local_logger=None, msg=""):
+def log_info_print(local_logger=logger, item=None, msg=None):
     local_logger.info(msg)
+    if item:
+        local_logger.info(pformat(item))
+    if not config.no_stdout:
+        print(msg)
+
+
+def log_warn_print(local_logger=logger, item=None, msg=None):
+    local_logger.warning(msg)
+    if item:
+        local_logger.info(pformat(item))
     if not config.no_stdout:
         print(msg)
 
@@ -949,11 +959,11 @@ def get_one_type_to_list(item_type=None, space_id=None):
 
 
 def get_task_status(task_id=None, space_id=None):
-    log_info_print(local_logger=logger, msg=f"check the status of task {task_id} in space {space_id}")
+    logger.info(f"check the status of task {task_id} in space {space_id}")
     task = get_or_delete_single_item_by_id(item_type=item_type_tasks, item_id=task_id, space_id=space_id)
     save_single_item(item_type=item_type_tasks, item=task, space_id=space_id)
-    log_info_print(local_logger=logger,
-                   msg=f"the task's status is {task.get(state_key)} and description is: {task.get(description_key)}")
+    logger.info(f"the task's status is {task.get(state_key)} and description is: {task.get(description_key)}")
+    log_info_print(local_logger=logger, msg=f"{task.get(state_key)}")
     return task.get(state_key)
 
 
@@ -962,6 +972,7 @@ def wait_task(task_id=None, space_id=None, time_limit_second=600):
                                             f"at {time_limit_second} seconds")
     counter = 0
     while get_task_status(task_id=task_id, space_id=space_id) == executing_string:
+        log_info_print(local_logger=logger, msg=f"{counter} seconds")
         if counter > time_limit_second:
             log_info_print(local_logger=logger,
                            msg=f"task {task_id} takes longer than {time_limit_second} seconds and times out")

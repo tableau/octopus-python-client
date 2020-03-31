@@ -1,3 +1,4 @@
+import json
 import logging
 from pprint import pformat
 
@@ -136,7 +137,7 @@ class ReleaseDeployment:
         deployment_response_payload = request_octopus_item(payload=deployment_request_payload, space_id=space_id,
                                                            address=item_type_deployments, action=operation_post)
         logger.info("the response deployment payload is")
-        log_info_print(local_logger=logger, msg=deployment_response_payload)
+        log_info_print(local_logger=logger, msg=json.dumps(deployment_response_payload))
         save_single_item(item_type=item_type_deployments, item=deployment_response_payload, space_id=space_id)
         return deployment_response_payload
 
@@ -162,7 +163,7 @@ class ReleaseDeployment:
             project_name=project_name, channel_name=channel_name, notes=notes, space_id_name=space_id_name,
             package_version_dict=package_version_json, packages_variable_set_name=packages_variable_set_name)
         release.create_release(release_version=release_version)
-        log_info_print(local_logger=logger, msg=release.release_response)
+        log_info_print(local_logger=logger, msg=json.dumps(release.release_response))
         return release
 
     @staticmethod

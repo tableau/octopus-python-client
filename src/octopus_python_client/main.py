@@ -97,12 +97,11 @@ def _parse_args():
     parser.add_argument("-bs", "--base_step_name", help="base step name as in octopus process for cloning a step")
     parser.add_argument("-ps", "--prev_step_name",
                         help="previous step name in octopus process for the step insertion location")
-    parser.add_argument("-sf", "--suffix", help="variable sets name suffix")
-    parser.add_argument("-rs", "--remove_suffix",
-                        help="if present, remove suffix from variable sets name, otherwise add suffix",
-                        action='store_true')
     parser.add_argument("-tl", "--time_limit_second", help="time limit in second")
     parser.add_argument("-rv", "--release_version", help="release version for creating a new release")
+    parser.add_argument("-as", "--add_suffix",
+                        help="if present, add suffix to variable sets name")
+    parser.add_argument("-rs", "--remove_suffix", help="if present, remove suffix from variable sets name")                        
     parser.add_argument("-pj", "--project_name", help="project name")
     parser.add_argument("-cn", "--channel_name", help="channel name")
     parser.add_argument("-nt", "--notes", help="notes")
@@ -227,8 +226,8 @@ def run():
     elif args.action == Actions.action_get_project:
         get_project(project_literal_name=args.project_name, space_id=space_id)
     elif args.action == Actions.action_project_update_variable_sets:
-        project_update_variable_sets(project_literal_name=args.project_name, suffix=args.suffix, space_id=space_id,
-                                     remove_suffix=args.remove_suffix)
+        project_update_variable_sets(project_literal_name=args.project_name, space_id=space_id,
+                                     remove_suffix=args.remove_suffix, add_suffix=args.add_suffix)
     elif args.action == Actions.action_clone_space:
         Migration().clone_space(src_space_id=space_id, dst_space_id=dst_space_id,
                                 item_types_comma_delimited=args.item_types, fake_space=fake_space)

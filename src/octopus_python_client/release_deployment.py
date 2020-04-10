@@ -151,6 +151,8 @@ class ReleaseDeployment:
             # if prev release has no matched commit or the commit could not be found, append all commits
             # once the prev release matched commit is found, only append the commits after it
             if prev_release_match_commit_date_time == commit_variable.get(name_key):
+                logger.info(f"found a matched timestamp {prev_release_match_commit_date_time} in commits history, "
+                            f"so will start to record all the commits after it")
                 list_commit_notes = []
         if not list_commit_notes:
             list_notes.append("\n..... no new commits since the previous release .....")

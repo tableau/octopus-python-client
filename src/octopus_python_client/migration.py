@@ -193,7 +193,8 @@ class Migration:
                 dst_item = put_single_item_save(item_type=item_type, payload=src_item_copy,
                                                 space_id=self.__dst_space_id)
             else:
-                logger.info(f"{self.__dst_space_id} already has {item_type} {src_id_value}, skipping it...")
+                log_info_print(local_logger=logger,
+                               msg=f"{self.__dst_space_id} already has {item_type} {src_id_value}, skipping it...")
         else:
             logger.info(f"{self.__dst_space_id} does not have {item_type} {src_id_value}, so creating it...")
             dst_item = post_single_item_save(item_type=item_type, payload=src_item_copy, space_id=self.__dst_space_id)
@@ -265,7 +266,8 @@ class Migration:
                                     f"into the destination space, so clone it first in the destination space")
                         dict_list[key] = self.__clone_item_to_space(item_type=self.__src_id_type_dict.get(value),
                                                                     item_id=value)
-                        logger.info(f"the reference value {value} was cloned and replaced with {dict_list.get(key)}")
+                        logger.info(f"the reference value {value} was cloned/found and replaced with "
+                                    f"{dict_list.get(key)}")
                     # remove the broken reference ids
                     elif self.__check_broken_item_id(string=value):
                         logger.warning(f"the reference value {value} is a broken reference id, so assign null to it")
@@ -283,7 +285,7 @@ class Migration:
                                     f"into the destination space, so clone it first in the destination space")
                         new_key = self.__clone_item_to_space(item_type=self.__src_id_type_dict.get(key), item_id=key)
                         dict_list[new_key] = dict_list.pop(key)
-                        logger.info(f"the reference key {key} was cloned and replaced with {new_key}")
+                        logger.info(f"the reference key {key} was cloned/found and replaced with {new_key}")
                     # remove the broken reference ids
                     elif self.__check_broken_item_id(string=key):
                         logger.warning(f"Key {value} is a broken reference id, so pop it")
@@ -305,7 +307,8 @@ class Migration:
                                     f"cloned into the destination space, so clone it first in the destination space")
                         dict_list[index] = self.__clone_item_to_space(item_type=self.__src_id_type_dict.get(element),
                                                                       item_id=element)
-                        logger.info(f"the reference element {element} was cloned and replaced with {dict_list[index]}")
+                        logger.info(f"the reference element {element} was cloned/found and replaced with "
+                                    f"{dict_list[index]}")
                     elif self.__check_broken_item_id(string=element):
                         logger.warning(f"element {element} is a broken reference id, so delete it; index {index}")
                         del dict_list[index]
@@ -544,8 +547,6 @@ class Migration:
         self.__item_types_set = set(normal_cloneable_types + [item_type, item_type_deployment_processes,
                                                               item_type_variables, item_type_tenant_variables])
         self.__initialize_maps(src_space_id=src_space_id, dst_space_id=dst_space_id, fake_space=fake_space)
-        for must_have_type in must_have_types:
-            self.__clone_type_to_space(item_type=must_have_type)
         if item_type in normal_cloneable_types:
             self.__clone_item_to_space(item_type=item_type, item_name=item_name, item_id=item_id)
         self.__save_space_map()

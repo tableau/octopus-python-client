@@ -23,6 +23,7 @@ file_configuration = "configuration.json"
 folder_outer_spaces = "outer_spaces"
 folder_configurations = "configurations"
 hyphen_sign = "-"
+newline_sign = "\n"
 runbook_process_prefix = "RunbookProcess"
 slash_all = "/all"
 slash_sign = "/"
@@ -38,6 +39,7 @@ positive_integer_regex = "-[1-9][0-9]*$"
 action_name_key = "ActionName"
 actions_key = 'Actions'
 api_key_key = "api_key"
+author_key = "author"
 canonical_tag_name_key = "CanonicalTagName"
 channel_id_key = "ChannelId"
 cloned_from_tenant_id_key = "ClonedFromTenantId"
@@ -71,10 +73,12 @@ project_id_key = "ProjectId"
 published_runbook_snapshot_id_key = "PublishedRunbookSnapshotId"
 release_id_key = "ReleaseId"
 release_notes_key = "ReleaseNotes"
+release_versions_key = "release_versions"
 runbook_id_key = "RunbookId"
 runbook_process_id_key = "RunbookProcessId"
 secret_key_key = "SecretKey"
 selected_packages_key = "SelectedPackages"
+sha_key = "SHA"
 state_key = "State"
 steps_key = 'Steps'
 space_id_key = "SpaceId"
@@ -83,6 +87,7 @@ task_id_key = "TaskId"
 team_id_key = "TeamId"
 tenant_id_key = "TenantId"
 token_key = "Token"
+url_prefix_key = "url_prefix"
 user_name_key = "user_name"
 user_role_id_key = "UserRoleId"
 value_key = "Value"
@@ -402,7 +407,7 @@ def get_ext_types_save(item_type=None, space_id=None, item_ids=None):
         ext_items_dict = {}
         for item_id in item_ids:
             address = item_type + slash_sign + item_id + slash_sign + ext_type
-            ext_item = request_octopus_item(payload=space_id, space_id=space_id, address=address)
+            ext_item = request_octopus_item(space_id=space_id, address=address)
             ext_items_dict[item_id] = ext_item
         ext_file = get_local_single_item_file(item_name=all_underscore + item_type + underscore_sign + ext_type,
                                               item_type=item_type, space_id=space_id)
@@ -503,6 +508,9 @@ def find_single_item_from_list_by_name(list_items=None, item_name=None):
         logger.info(f"The list is empty, so return")
         return {}
     item = find_item(list_items, name_key, item_name)
+    if not item:
+        logger.info(f"{item_name} does not exist")
+        return {}
     if item.get(id_key):
         logger.info(f"{id_key} for {item_name} is " + item.get(id_key))
     else:
@@ -947,6 +955,9 @@ def get_list_variables_by_set_name_or_id(set_name=None, set_id=None, space_id=No
     if set_name:
         library_variable_set = \
             get_single_item_by_name(item_type=item_type_library_variable_sets, item_name=set_name, space_id=space_id)
+        if not library_variable_set:
+            logger.info(f"library variable set {set_name} could not be found in space {space_id}")
+            return []
         set_id = library_variable_set.get(variable_set_id_key)
     variables_dict = \
         get_or_delete_single_item_by_id(item_type=item_type_variables, item_id=set_id, space_id=space_id)

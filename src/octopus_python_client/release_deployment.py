@@ -23,7 +23,6 @@ class ReleaseDeployment:
     def __init__(self, project_name=None, channel_name=None, notes=None, space_id_name=None):
         assert space_id_name, "space name/id must not be empty!"
         assert project_name, "project name must not be empty!"
-        self._project_name = project_name
 
         self._space_id = verify_space(space_id_name=space_id_name)
         assert self._space_id, f"Space {space_id_name} cannot be found or you do not have permission to access!"
@@ -113,7 +112,9 @@ class ReleaseDeployment:
                f"{commit_dict.get(sha_key)}) - {commit_dict.get(author_key)}"
 
     def _generate_commits_notes(self):
+        logger.info("generating the release notes for the commits history")
         # find the latest/previous release for this project
+        logger.info(f"loading all releases from project {self._project_id}")
         address = f"{item_type_projects}/{self._project_id}/{item_type_releases}"
         releases = request_octopus_item(space_id=self._space_id, address=address)
         list_releases = get_list_items_from_all_items(all_items=releases)
@@ -121,6 +122,7 @@ class ReleaseDeployment:
         list_notes = ["\n========== below is auto-generated notes =========="]
         if list_releases:
             prev_release = max(list_releases, key=lambda release: release.get(id_key))
+            logger.info(f"the latest release for project {self._project_id} is {prev_release.get(id_key)}")
             if prev_release.get(release_notes_key):
                 logger.info(f"found the notes in the previous release {prev_release.get(id_key)} and try to get the"
                             f" commit timestamp...")
@@ -133,6 +135,7 @@ class ReleaseDeployment:
             topic_note = f"\nThe previous release is {prev_release.get(id_key)} (release version: " \
                          f"{prev_release.get(version_key)}). "
         else:
+            logger.info(f"project {self._project_id} has no existing releases")
             topic_note = f"\nThis is the first release for this project. "
         list_notes.append(topic_note)
         list_notes.append("The gitlab commits since the previous release are:")

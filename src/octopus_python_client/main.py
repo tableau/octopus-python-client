@@ -101,14 +101,10 @@ def _parse_args():
     parser.add_argument("-rv", "--release_version", help="release version for creating a new release")
     parser.add_argument("-as", "--add_suffix",
                         help="if present, add suffix to variable sets name")
-    parser.add_argument("-rs", "--remove_suffix", help="if present, remove suffix from variable sets name")                        
+    parser.add_argument("-rs", "--remove_suffix", help="if present, remove suffix from variable sets name")
     parser.add_argument("-pj", "--project_name", help="project name")
     parser.add_argument("-cn", "--channel_name", help="channel name")
     parser.add_argument("-nt", "--notes", help="notes")
-    parser.add_argument("-pv", "--package_version_json",
-                        help="user selected package versions, e.g. \""
-                             r"{\"package.near\": \"20.0225.1714\", \"package.main\": \"20.0325.0839\"}" "\"")
-    parser.add_argument("-vs", "--variable_set_name", help="variable set name")
     parser.add_argument("-ri", "--release_id", help="release id for deployment")
     parser.add_argument("-en", "--environment_name", help="environment name, like Integration")
     parser.add_argument("-tn", "--tenant_name", help="tenant name, like cd-near")
@@ -123,8 +119,8 @@ def run():
 
     if args.octopus_endpoint:
         config.octopus_endpoint = args.octopus_endpoint
-    if not config.octopus_endpoint:
-        raise ValueError("octopus_endpoint must not be empty")
+    if not config.octopus_endpoint or not config.octopus_endpoint.endswith("/api/"):
+        raise ValueError("octopus_endpoint must end with /api/")
 
     if args.octopus_name:
         config.octopus_name = args.octopus_name
@@ -241,8 +237,7 @@ def run():
     elif args.action == Actions.action_create_release:
         ReleaseDeployment.create_release_direct(
             release_version=args.release_version, project_name=args.project_name, channel_name=args.channel_name,
-            notes=args.notes, space_id_name=space_id, package_version_json=args.package_version_json,
-            packages_variable_set_name=args.variable_set_name)
+            notes=args.notes, space_id_name=space_id)
     elif args.action == Actions.action_create_deployment:
         ReleaseDeployment.create_deployment_direct(
             release_id=args.release_id, environment_name=args.environment_name, tenant_name=args.tenant_name,
@@ -250,8 +245,7 @@ def run():
     elif args.action == Actions.action_create_release_deployment:
         ReleaseDeployment.create_release_deployment(
             release_version=args.release_version, project_name=args.project_name, channel_name=args.channel_name,
-            notes=args.notes, space_id_name=space_id, package_version_json=args.package_version_json,
-            packages_variable_set_name=args.variable_set_name, environment_name=args.environment_name,
+            notes=args.notes, space_id_name=space_id, environment_name=args.environment_name,
             tenant_name=args.tenant_name, comments=args.comments)
 
     else:

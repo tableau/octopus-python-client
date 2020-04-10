@@ -2,24 +2,28 @@ import json
 import logging
 from pprint import pformat
 
+import yaml
+
 from octopus_python_client.common import request_octopus_item, item_type_deployment_processes, verify_space, \
     item_type_projects, get_single_item_by_name, id_key, deployment_process_id_key, item_type_channels, \
     find_sub_by_item, packages_key, action_name_key, package_reference_name_key, feed_id_key, package_id_key, \
     item_type_feeds, item_type_packages, version_key, items_key, get_list_variables_by_set_name_or_id, name_key, \
     value_key, project_id_key, next_version_increment_key, release_notes_key, channel_id_key, selected_packages_key, \
     item_type_releases, save_single_item, item_type_deployments, item_type_tenants, item_type_environments, \
-    get_item_id_by_name, tenant_id_key, environment_id_key, release_id_key, comments_key, log_info_print
-from octopus_python_client.utilities.helper import replace_list_new_value, get_dict_from_str
+    get_item_id_by_name, tenant_id_key, environment_id_key, release_id_key, comments_key, log_info_print, \
+    release_versions_key, url_prefix_key, dot_sign, sha_key, author_key, newline_sign, get_list_items_from_all_items, \
+    item_type_library_variable_sets
+from octopus_python_client.utilities.helper import replace_list_new_value, parse_string, find_item
 from octopus_python_client.utilities.send_requests_to_octopus import operation_post
 
 logger = logging.getLogger(__name__)
 
 
 class ReleaseDeployment:
-    def __init__(self, project_name=None, channel_name=None, notes=None, space_id_name=None, package_version_dict=None,
-                 packages_variable_set_name=None):
+    def __init__(self, project_name=None, channel_name=None, notes=None, space_id_name=None):
         assert space_id_name, "space name/id must not be empty!"
         assert project_name, "project name must not be empty!"
+        self._project_name = project_name
 
         self._space_id = verify_space(space_id_name=space_id_name)
         assert self._space_id, f"Space {space_id_name} cannot be found or you do not have permission to access!"
@@ -29,6 +33,7 @@ class ReleaseDeployment:
         assert project, f"Project {project_name} cannot be found or you do not have permission to access!"
         self._project_id = project.get(id_key)
         self._deployment_process_id = project.get(deployment_process_id_key)
+        self._notes = notes
         self._release_request_payload = {project_id_key: self._project_id, release_notes_key: notes}
 
         self._channel_id = ""
@@ -40,19 +45,27 @@ class ReleaseDeployment:
         if self._channel_id:
             self._release_request_payload[channel_id_key] = self._channel_id
 
-        # package versions read from a variable set, e.g. {"Name": "package.near", "Value": "20.0225.1714"}
-        self._packages_variable_set_name = packages_variable_set_name
-
-        # user selected package versions, e.g. "{'package.near': '20.0225.1714'}"
+        # package versions read from a variable set,
+        # e.g. release_versions = {"Name": "package.near", "Value": "20.0225.1714"}
+        self._packages_variable_set_name = None
+        # user selected package versions, e.g. "{'packages': {'package.near': '20.0225.1714'}}"
         self._package_version_dict = None
-        if package_version_dict:
-            logger.info(f"converting package version {package_version_dict} to dict...")
-            self._package_version_dict = get_dict_from_str(string=package_version_dict)
 
         self._template = None
         self._selected_packages = None
         self._release_response = None
         self._release_id = None
+        self._commits_variable_set_name = "configuration_commits" + dot_sign + project_name
+        self._gitlab_url_prefix = self._get_url_prefix(set_name="gitlab_info")
+
+    def _get_url_prefix(self, set_name=None):
+        info_service_list_variables = get_list_variables_by_set_name_or_id(set_name=set_name,
+                                                                           space_id=self._space_id)
+        if info_service_list_variables:
+            url_prefix_variable = find_item(lst=info_service_list_variables, key=name_key, value=url_prefix_key)
+            if url_prefix_variable:
+                return url_prefix_variable.get(value_key)
+        return ""
 
     def _get_deployment_process_template(self):
         logger.info(f"Fetching deployment process template from {self._deployment_process_id} with channel "
@@ -81,6 +94,7 @@ class ReleaseDeployment:
         replace_list_new_value(lst=self._selected_packages, match_dict=match_dict, replace_dict=replace_dict)
 
     def _update_selected_packages(self):
+        logger.info("update package versions...")
         if self._packages_variable_set_name:
             list_release_versions = get_list_variables_by_set_name_or_id(set_name=self._packages_variable_set_name,
                                                                          space_id=self._space_id)
@@ -91,11 +105,87 @@ class ReleaseDeployment:
             for package, version in self._package_version_dict.items():
                 self._update_package_version(package=package, version=version)
 
+    def _form_single_commit_note(self, commit_variable=None):
+        date_time = commit_variable.get(name_key)
+        commit_yaml = commit_variable.get(value_key)
+        commit_dict = yaml.safe_load(commit_yaml)
+        return f"- {date_time} - {sha_key}: [{commit_dict.get(sha_key)}]({self._gitlab_url_prefix}" \
+               f"{commit_dict.get(sha_key)}) - {commit_dict.get(author_key)}"
+
+    def _generate_commits_notes(self):
+        # find the latest/previous release for this project
+        address = f"{item_type_projects}/{self._project_id}/{item_type_releases}"
+        releases = request_octopus_item(space_id=self._space_id, address=address)
+        list_releases = get_list_items_from_all_items(all_items=releases)
+        prev_release_match_commit_date_time = ""
+        list_notes = ["\n========== below is auto-generated notes =========="]
+        if list_releases:
+            prev_release = max(list_releases, key=lambda release: release.get(id_key))
+            if prev_release.get(release_notes_key):
+                logger.info(f"found the notes in the previous release {prev_release.get(id_key)} and try to get the"
+                            f" commit timestamp...")
+                notes_last_line = prev_release.get(release_notes_key).splitlines()[-1]
+                last_line_parsed = parse_string(local_logger=logger, string=notes_last_line)
+                if isinstance(last_line_parsed, dict) and last_line_parsed.get(self._commits_variable_set_name):
+                    prev_release_match_commit_date_time = last_line_parsed.get(self._commits_variable_set_name)
+                    logger.info(f"the commit timestamp in the previous release {prev_release.get(id_key)} is "
+                                f"{prev_release_match_commit_date_time}")
+            topic_note = f"\nThe previous release is {prev_release.get(id_key)} (release version: " \
+                         f"{prev_release.get(version_key)}). "
+        else:
+            topic_note = f"\nThis is the first release for this project. "
+        list_notes.append(topic_note)
+        list_notes.append("The gitlab commits since the previous release are:")
+
+        # historical commits since the latest release
+        list_configuration_commits = get_list_variables_by_set_name_or_id(
+            set_name=self._commits_variable_set_name, space_id=self._space_id)
+        list_configuration_commits_sorted = sorted(list_configuration_commits, key=lambda k: k.get(name_key))
+        list_commit_notes = []
+        for commit_variable in list_configuration_commits_sorted:
+            commit_note = self._form_single_commit_note(commit_variable=commit_variable)
+            list_commit_notes.append(commit_note)
+            # if prev release has no matched commit or the commit could not be found, append all commits
+            # once the prev release matched commit is found, only append the commits after it
+            if prev_release_match_commit_date_time == commit_variable.get(name_key):
+                list_commit_notes = []
+        if not list_commit_notes:
+            list_notes.append("\n..... no new commits since the previous release .....")
+        else:
+            list_notes.extend(list_commit_notes)
+
+        # matched commit for the current release
+        latest_commit_variable = max(list_configuration_commits, key=lambda commit: commit.get(name_key))
+        latest_commit_note = self._form_single_commit_note(commit_variable=latest_commit_variable)
+        list_notes.append(f"\nThe matched latest gitlab commit for this release is {latest_commit_note}")
+        list_notes.append(f"\nBelow is a python dictionary read by Octopus python client in the succeeding releases "
+                          f"to identify the gitlab commit for the preceding release "
+                          f"and it must be the last line in the release notes. '{self._commits_variable_set_name}' is "
+                          f"the variable set name for the commits history and the value is the matched commit timestamp"
+                          f" for this release")
+        latest_date_time = latest_commit_variable.get(name_key)
+        list_notes.append("\n{'" + f"{self._commits_variable_set_name}" + "': '" + f"{latest_date_time}" + "'}")
+        return newline_sign.join(list_notes)
+
+    def _process_notes(self):
+        logger.info("process notes...")
+        notes = parse_string(local_logger=logger, string=self._notes)
+        if isinstance(notes, dict):
+            logger.info("the notes is a dictionary, so further process...")
+            logger.info(pformat(notes))
+            self._packages_variable_set_name = notes.get(release_versions_key)
+            self._package_version_dict = notes.get(item_type_packages)
+            self._update_selected_packages()
+        if get_single_item_by_name(item_type=item_type_library_variable_sets,
+                                   item_name=self._commits_variable_set_name, space_id=self._space_id):
+            commit_notes = self._generate_commits_notes()
+            self._release_request_payload[release_notes_key] = newline_sign.join([self._notes, commit_notes])
+
     # release version must be unique for each release
     def create_release(self, release_version=None):
         self._get_deployment_process_template()
         self._get_selected_packages()
-        self._update_selected_packages()
+        self._process_notes()
         if not release_version:
             release_version = self._template.get(next_version_increment_key)
         self._release_request_payload[version_key] = release_version
@@ -158,21 +248,18 @@ class ReleaseDeployment:
 
     @staticmethod
     def create_release_direct(release_version=None, project_name=None, channel_name=None, notes=None,
-                              space_id_name=None, package_version_json=None, packages_variable_set_name=None):
-        release = ReleaseDeployment(
-            project_name=project_name, channel_name=channel_name, notes=notes, space_id_name=space_id_name,
-            package_version_dict=package_version_json, packages_variable_set_name=packages_variable_set_name)
+                              space_id_name=None):
+        release = ReleaseDeployment(project_name=project_name, channel_name=channel_name, notes=notes,
+                                    space_id_name=space_id_name)
         release.create_release(release_version=release_version)
         log_info_print(local_logger=logger, msg=json.dumps(release.release_response))
         return release
 
     @staticmethod
     def create_release_deployment(release_version=None, project_name=None, channel_name=None, notes=None,
-                                  space_id_name=None, package_version_json=None, packages_variable_set_name=None,
-                                  environment_name=None, tenant_name=None, comments=None):
-        release = ReleaseDeployment.create_release_direct(
-            release_version=release_version, project_name=project_name, channel_name=channel_name, notes=notes,
-            space_id_name=space_id_name, package_version_json=package_version_json,
-            packages_variable_set_name=packages_variable_set_name)
+                                  space_id_name=None, environment_name=None, tenant_name=None, comments=None):
+        release = ReleaseDeployment.create_release_direct(release_version=release_version, project_name=project_name,
+                                                          channel_name=channel_name, notes=notes,
+                                                          space_id_name=space_id_name)
         return release.create_deployment_for_current_release(environment_name=environment_name, tenant_name=tenant_name,
                                                              comments=comments)

@@ -174,12 +174,16 @@ def save_file(file_path_name=None, content=None):
                                   f"{file_path_name} is not one of them")
 
 
-def get_dict_from_str(string=None):
-    logger.info(f"converting str {string} to dict...")
-    python_structure = ast.literal_eval(string)
-    if not isinstance(python_structure, dict):
-        log_raise_value_error(item=python_structure, err="string is not a python dictionary")
-    logger.info(python_structure)
+def parse_string(local_logger=logger, string=None):
+    local_logger.info(f"parse str {string}...")
+    try:
+        python_structure = ast.literal_eval(string)
+    except Exception as err:
+        local_logger.warning(err)
+        local_logger.info("string is not a python structure")
+        return string
+    local_logger.info("string is a python structure:")
+    local_logger.info(pformat(python_structure))
     return python_structure
 
 

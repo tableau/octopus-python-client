@@ -6,7 +6,7 @@ from octopus_python_client.common import config, get_one_type_save, get_single_i
     update_single_item_save, create_single_item_from_local_file, item_type_deployment_processes, \
     clone_single_item_from_remote_item, delete_single_item_by_name_or_id, get_child_item_save, \
     update_child_item_from_local_save, clone_child_item_from_another_parent_save, get_types_save, \
-    item_types_only_ourter_space, item_types_inside_space, deployment_process_id_key, steps_key, \
+    item_types_only_outer_space, item_types_inside_space, deployment_process_id_key, steps_key, \
     merge_single_item_save, delete_one_type, api_key_key, octopus_endpoint_key, octopus_name_key, user_name_key, \
     password_key, double_hyphen, verify_space, get_spaces_save, get_task_status, wait_task
 from octopus_python_client.migration import Migration
@@ -80,10 +80,10 @@ def _parse_args():
                              'regardless whether they are above Spaces; if (not item_types) and octopus_space_id, '
                              'get all item types below octopus_space_id; '
                              'list like "accounts,actiontemplates,artifacts" is also accepted; '
-                             'item types above Spaces: ' + ", ".join(item_types_only_ourter_space) +
+                             'item types above Spaces: ' + ", ".join(item_types_only_outer_space) +
                              "; \nitem types above and under Spaces: " + ", ".join(item_types_inside_space))
     parser.add_argument("-tp", "--item_type", help="one of item types above Spaces: " + ", ".join(
-        item_types_only_ourter_space) + "; \nitem types above and under Spaces: " + ", ".join(item_types_inside_space))
+        item_types_only_outer_space) + "; \nitem types above and under Spaces: " + ", ".join(item_types_inside_space))
     parser.add_argument("-nm", "--item_name", help="item name: e.g. project_name")
     parser.add_argument("-id", "--item_id", help="item id: e.g. Lifecycles-1")
     parser.add_argument("-bn", "--base_item_name", help="base item name, either local or on Octopus server")

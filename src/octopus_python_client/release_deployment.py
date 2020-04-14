@@ -12,7 +12,7 @@ from octopus_python_client.common import request_octopus_item, item_type_deploym
     item_type_releases, save_single_item, item_type_deployments, item_type_tenants, item_type_environments, \
     get_item_id_by_name, tenant_id_key, environment_id_key, release_id_key, comments_key, log_info_print, \
     release_versions_key, url_prefix_key, dot_sign, sha_key, author_key, newline_sign, get_list_items_from_all_items, \
-    item_type_library_variable_sets
+    item_type_library_variable_sets, latest_commit_sha_key
 from octopus_python_client.utilities.helper import replace_list_new_value, parse_string, find_item
 from octopus_python_client.utilities.send_requests_to_octopus import operation_post
 
@@ -56,6 +56,7 @@ class ReleaseDeployment:
         self._release_id = None
         self._commits_variable_set_name = "configuration_commits" + dot_sign + project_name
         self._gitlab_url_prefix = self._get_url_prefix(set_name="gitlab_info")
+        self._latest_commit_sha = None
 
     def _get_url_prefix(self, set_name=None):
         info_service_list_variables = get_list_variables_by_set_name_or_id(set_name=set_name,
@@ -132,20 +133,32 @@ class ReleaseDeployment:
                     prev_release_match_commit_date_time = last_line_parsed.get(self._commits_variable_set_name)
                     logger.info(f"the commit timestamp in the previous release {prev_release.get(id_key)} is "
                                 f"{prev_release_match_commit_date_time}")
+                else:
+                    logger.warning(f"the commit timestamp in the previous release {prev_release.get(id_key)} not exist")
+            else:
+                logger.warning(f"previous release {prev_release.get(id_key)} has no release notes")
             topic_note = f"\nThe previous release is {prev_release.get(id_key)} (release version: " \
                          f"{prev_release.get(version_key)}). "
         else:
             logger.info(f"project {self._project_id} has no existing releases")
             topic_note = f"\nThis is the first release for this project. "
         list_notes.append(topic_note)
-        list_notes.append("The gitlab commits since the previous release are:")
 
         # historical commits since the latest release
         list_configuration_commits = get_list_variables_by_set_name_or_id(
             set_name=self._commits_variable_set_name, space_id=self._space_id)
+        if not list_configuration_commits:
+            msg = f"\nVariable set {self._commits_variable_set_name} contains NONE historical commits. No commits " \
+                  f"can be matched to the releases."
+            logger.error(msg)
+            list_notes.append(msg)
+            return newline_sign.join(list_notes)
+
         list_configuration_commits_sorted = sorted(list_configuration_commits, key=lambda k: k.get(name_key))
         list_commit_notes = []
+        latest_commit_variable = None
         for commit_variable in list_configuration_commits_sorted:
+            latest_commit_variable = commit_variable
             commit_note = self._form_single_commit_note(commit_variable=commit_variable)
             list_commit_notes.append(commit_note)
             # if prev release has no matched commit or the commit could not be found, append all commits
@@ -154,22 +167,25 @@ class ReleaseDeployment:
                 logger.info(f"found a matched timestamp {prev_release_match_commit_date_time} in commits history, "
                             f"so will start to record all the commits after it")
                 list_commit_notes = []
+        list_notes.append("\nThe gitlab commits since the previous release are: ")
         if not list_commit_notes:
-            list_notes.append("\n..... no new commits since the previous release .....")
+            list_notes.append("None")
         else:
             list_notes.extend(list_commit_notes)
 
-        # matched commit for the current release
-        latest_commit_variable = max(list_configuration_commits, key=lambda commit: commit.get(name_key))
-        latest_commit_note = self._form_single_commit_note(commit_variable=latest_commit_variable)
-        list_notes.append(f"\nThe matched latest gitlab commit for this release is {latest_commit_note}")
-        list_notes.append(f"\nBelow is a python dictionary read by Octopus python client in the succeeding releases "
-                          f"to identify the gitlab commit for the preceding release "
-                          f"and it must be the last line in the release notes. '{self._commits_variable_set_name}' is "
-                          f"the variable set name for the commits history and the value is the matched commit timestamp"
-                          f" for this release")
-        latest_date_time = latest_commit_variable.get(name_key)
-        list_notes.append("\n{'" + f"{self._commits_variable_set_name}" + "': '" + f"{latest_date_time}" + "'}")
+        # matched latest commit for the current release
+        if latest_commit_variable:
+            latest_commit_dict = yaml.safe_load(latest_commit_variable.get(value_key))
+            self._latest_commit_sha = latest_commit_dict.get(sha_key)
+            latest_commit_note = self._form_single_commit_note(commit_variable=latest_commit_variable)
+            list_notes.append(f"\nThe matched latest gitlab commit for this release is {latest_commit_note}")
+            list_notes.append(f"\nBelow is a python dictionary read by Octopus python client in the succeeding "
+                              f"releases to identify the gitlab commit for the preceding release and it must be the "
+                              f"last line in the release notes. '{self._commits_variable_set_name}' is the variable "
+                              f"set name for the commits history and the value is the matched commit timestamp for "
+                              f"this release")
+            latest_date_time = latest_commit_variable.get(name_key)
+            list_notes.append("\n{'" + f"{self._commits_variable_set_name}" + "': '" + f"{latest_date_time}" + "'}")
         return newline_sign.join(list_notes)
 
     def _process_notes(self):
@@ -199,6 +215,8 @@ class ReleaseDeployment:
         logger.info(pformat(self._release_request_payload))
         self._release_response = request_octopus_item(payload=self._release_request_payload, space_id=self._space_id,
                                                       address=item_type_releases, action=operation_post)
+        if self._latest_commit_sha:
+            self._release_response[latest_commit_sha_key] = self._latest_commit_sha
         logger.info("the response release payload is")
         logger.info(pformat(self._release_response))
         save_single_item(item_type=item_type_releases, item=self._release_response, space_id=self._space_id)

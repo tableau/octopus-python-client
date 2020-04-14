@@ -14,7 +14,7 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     item_type_runbooks, item_type_accounts, token_key, comma_sign, space_id_key, published_runbook_snapshot_id_key, \
     item_type_scoped_user_roles, user_role_id_key, team_id_key, item_type_runbook_processes, runbook_process_prefix, \
     item_id_prefix_to_type_dict, positive_integer_regex, prepare_project_versioning_strategy, log_info_print, \
-    get_one_type_ignore_error, get_single_item_by_name_or_id, log_warn_print, item_types_inside_space
+    get_one_type_ignore_error, get_single_item_by_name_or_id, log_warn_print, item_types_inside_space, scope_values_key
 from octopus_python_client.utilities.helper import find_item, save_file, find_matched_sub_list, log_raise_value_error
 
 logger = logging.getLogger(__name__)
@@ -131,6 +131,8 @@ class Migration:
 
         full_process = self.__type_full_func_dict.get(item_type)
         if full_process:
+            logger.info(f"Special full processing for {item_type} {item_name} {item_id} in space {self.__dst_space_id} "
+                        f"with function {full_process.__name__}")
             return full_process(item_type=item_type, item_name=item_name, item_id=item_id)
 
         # find the source item in file/memory
@@ -152,20 +154,22 @@ class Migration:
         if src_id_value in self.__src_id_vs_dst_id_dict:
             dst_id_value = self.__src_id_vs_dst_id_dict.get(src_id_value)
             log_info_print(local_logger=logger,
-                           msg=f"{item_type} {src_item_name} {src_id_value} has already been cloned to space "
-                               f"{self.__dst_space_id} as {dst_id_value} in this session; skip it")
+                           msg=f"{item_type} {src_item_name} {src_id_value} in space {self.__src_space_id} has already "
+                               f"been cloned to space {self.__dst_space_id} as {dst_id_value} in this session; skip it")
             return dst_id_value
 
-        log_info_print(local_logger=logger, msg=f"cloning {item_type} {src_item_name} {src_id_value} to space "
-                                                f"{self.__dst_space_id}")
-        logger.info(f"preprocessing {item_type} {src_id_value} with the new references in {self.__dst_space_id}...")
+        log_info_print(local_logger=logger, msg=f"cloning {item_type} {src_item_name} {src_id_value} in space "
+                                                f"{self.__src_space_id} to space {self.__dst_space_id}")
+        logger.info(f"preprocessing {item_type} {src_item_name} {src_id_value} in space {self.__src_space_id} with the "
+                    f"new references in {self.__dst_space_id}...")
         # do not modify the items in memory
         src_item_copy = copy.deepcopy(src_item)
 
         # some type needs additional prep-processing
         prep_process = self.__type_prep_func_dict.get(item_type)
         if prep_process:
-            logger.info(f"special preprocessing for {item_type} {src_id_value} with function {prep_process}")
+            logger.info(f"special preprocessing for {item_type} {src_item_name} {src_id_value} in space "
+                        f"{self.__src_space_id} with function {prep_process.__name__}")
             prep_process(src_item=src_item_copy)
 
         # since the destination "Id: Self-2" has not been created and saved into map
@@ -175,28 +179,38 @@ class Migration:
 
         self.__replace_ids(dict_list=src_item_copy)
 
-        logger.info(f"check if {item_type} {src_id_value} already exists in {self.__dst_space_id}")
+        logger.info(f"check if {item_type} {src_item_name} {src_id_value} in space {self.__src_space_id} already exists"
+                    f" in space {self.__dst_space_id}")
         dst_item = self.__find_matched_dst_item_by_src_item(src_item_with_dst_ids=src_item_copy, item_type=item_type)
         dst_item_exist = True if dst_item else False
         if dst_item_exist:
             if config.overwrite:
-                logger.info(f"{self.__dst_space_id} already has {item_type} {src_id_value}, overwriting it...")
+                log_info_print(local_logger=logger,
+                               msg=f"destination space {self.__dst_space_id} already has {item_type} {src_item_name} "
+                                   f"{dst_item.get(id_key)}, overwriting it per user request...")
                 src_item_copy[id_key] = dst_item.get(id_key)
 
                 # TODO bug in Octopus: PUT a runbook with null RunbookProcessId will remove RunbookProcessId from dst
                 if item_type == item_type_runbooks and src_item.get(runbook_process_id_key):
                     matched_runbook_process_id = runbook_process_prefix + hyphen_sign + dst_item.get(id_key)
-                    logger.info(f"Reassign process id {matched_runbook_process_id} for {src_item_copy.get(id_key)}")
+                    logger.warning(f"TODO bug in Octopus: PUT a runbook with null RunbookProcessId will remove "
+                                   f"RunbookProcessId from dst; Reassign process id {matched_runbook_process_id} for "
+                                   f"{src_item_copy.get(id_key)}")
                     src_item_copy[runbook_process_id_key] = matched_runbook_process_id
 
                 dst_item = put_single_item_save(item_type=item_type, payload=src_item_copy,
                                                 space_id=self.__dst_space_id)
             else:
                 log_info_print(local_logger=logger,
-                               msg=f"{self.__dst_space_id} already has {item_type} {src_id_value}, skipping it...")
+                               msg=f"{self.__dst_space_id} already has {item_type} {src_item_name} "
+                                   f"{dst_item.get(id_key)}, skip it per user request")
         else:
-            logger.info(f"{self.__dst_space_id} does not have {item_type} {src_id_value}, so creating it...")
+            logger.info(f"destination space {self.__dst_space_id} does not have {item_type} {src_item_name} "
+                        f"{src_id_value} from space {self.__src_space_id}, so creating it...")
             dst_item = post_single_item_save(item_type=item_type, payload=src_item_copy, space_id=self.__dst_space_id)
+            log_info_print(local_logger=logger,
+                           msg=f"{item_type} {src_item_name} {src_id_value} in space {self.__src_space_id} was cloned "
+                               f"to space {self.__dst_space_id} as {dst_item.get(id_key)} successfully")
 
         dst_id_value = dst_item.get(id_key)
         logger.info(f"add the id pair ({src_id_value}, {dst_id_value}) to the id map")
@@ -205,7 +219,9 @@ class Migration:
 
         post_process = self.__type_post_func_dict.get(item_type)
         if post_process and (not dst_item_exist or config.overwrite):
-            logger.info(f"Additional processing for {item_type} {src_id_value} with function {post_process}")
+            log_info_print(local_logger=logger,
+                           msg=f"Additional post-processing for {item_type} {src_item_name} {dst_id_value} in space "
+                               f"{self.__dst_space_id} with function {post_process.__name__}")
             post_process(src_id=src_id_value, dst_id=dst_id_value)
 
         return dst_id_value
@@ -341,13 +357,16 @@ class Migration:
         dst_child = get_or_delete_single_item_by_id(item_type=child_type, item_id=dst_child_id,
                                                     space_id=self.__dst_space_id)
         src_child_copy = copy.deepcopy(src_child)
+
+        # TODO ScopeValues seems redundant in variables; ScopeValues defines a general scope to be used for variable set
+        # but ScopeValues does not scope a specific variable at all; ScopeValues in variable set payload not very useful
+        # if ScopeValues is not popped, all scopes will be cloned recursively even if some of them are not used at all  
+        src_child_copy.pop(scope_values_key, None)
+
         src_child_copy[version_key] = dst_child.get(version_key)
         self.__replace_ids(dict_list=src_child_copy)
-        # an Octopus bug: "PUT" variables does not return ScopeValues;
-        # so have to run "GET" again after "PUT" to save values
-        put_single_item(item_type=child_type, payload=src_child_copy, space_id=self.__dst_space_id)
-        dst_child = get_single_item_by_name_or_id(item_type=child_type, item_id=dst_child_id,
-                                                  space_id=self.__dst_space_id)
+
+        dst_child = put_single_item(item_type=child_type, payload=src_child_copy, space_id=self.__dst_space_id)
         self.__dst_id_payload_dict[dst_child_id] = dst_child
         return dst_child_id
 
@@ -356,24 +375,28 @@ class Migration:
     # space matching the same projects; the API call is "PUT" not "POST"
     # same for the variables
     def __post_process_project(self, src_id=None, dst_id=None):
-        logger.info(f"clone {item_type_deployment_processes} from {item_type_projects} {src_id} to {dst_id} in "
-                    f"{self.__dst_space_id}")
+        log_info_print(local_logger=logger,
+                       msg=f"clone {item_type_deployment_processes} from {item_type_projects} {src_id} in "
+                           f"{self.__src_space_id} to {dst_id} in {self.__dst_space_id}")
         self.__clone_child(src_parent_id=src_id, dst_parent_id=dst_id, child_type=item_type_deployment_processes,
                            child_id_key=deployment_process_id_key)
-        logger.info(f"clone {item_type_variables} from {item_type_projects} {src_id} to {dst_id} in "
-                    f"{self.__dst_space_id}")
+        log_info_print(local_logger=logger,
+                       msg=f"clone {item_type_variables} from {item_type_projects} {src_id} in {self.__src_space_id} "
+                           f"to {dst_id} in {self.__dst_space_id}")
         self.__clone_child(src_parent_id=src_id, dst_parent_id=dst_id, child_type=item_type_variables,
                            child_id_key=variable_set_id_key)
 
     def __post_process_library_variable_set(self, src_id=None, dst_id=None):
-        logger.info(f"clone {item_type_variables} from {item_type_library_variable_sets} {src_id} to {dst_id} in "
-                    f"{self.__dst_space_id}")
+        log_info_print(local_logger=logger,
+                       msg=f"clone {item_type_variables} from {item_type_library_variable_sets} {src_id} in "
+                           f"{self.__src_space_id} to {dst_id} in {self.__dst_space_id}")
         self.__clone_child(src_parent_id=src_id, dst_parent_id=dst_id, child_type=item_type_variables,
                            child_id_key=variable_set_id_key)
 
     def __post_process_runbook(self, src_id=None, dst_id=None):
-        logger.info(f"clone {item_type_runbook_processes} from {item_type_runbooks} {src_id} to {dst_id} in "
-                    f"{self.__dst_space_id}")
+        log_info_print(local_logger=logger,
+                       msg=f"clone {item_type_runbook_processes} from {item_type_runbooks} {src_id} in "
+                           f"{self.__src_space_id} to {dst_id} in {self.__dst_space_id}")
         self.__clone_child(src_parent_id=src_id, dst_parent_id=dst_id, child_type=item_type_runbook_processes,
                            child_id_key=runbook_process_id_key)
 
@@ -381,8 +404,9 @@ class Migration:
     # so you have to use a separate map to store the tenants variables
     # also put/post tenant variables uses a different url from put variables
     def __post_process_tenant_variables(self, src_id=None, dst_id=None):
-        logger.info(f"clone {item_type_tenant_variables} from {item_type_tenants} {src_id} in {self.__src_space_id} "
-                    f"to {dst_id} in {self.__dst_space_id}")
+        log_info_print(local_logger=logger,
+                       msg=f"clone {item_type_tenant_variables} from {item_type_tenants} {src_id} in "
+                           f"{self.__src_space_id} to {dst_id} in {self.__dst_space_id}")
         src_tenant_variables = self.__src_tenant_variables_payload_dict.get(src_id)
         src_tenant_variables_copy = copy.deepcopy(src_tenant_variables)
 
@@ -394,7 +418,9 @@ class Migration:
         self.__dst_tenant_variables_payload_dict[dst_id] = dst_tenant_variables
 
     def __full_process_tags(self, item_type=None, item_name=None, item_id=None):
-        logger.info(f"full process - clone {item_type} {item_name} {item_id} to {self.__dst_space_id}")
+        log_info_print(local_logger=logger,
+                       msg=f"special full process - clone {item_type} {item_name} {item_id} from {self.__src_space_id} "
+                           f"to {self.__dst_space_id}")
         tag_set_name = item_id.split(slash_sign)[0]
         src_list_tag_sets = self.__type_src_list_items_dict.get(item_type_tag_sets)
         src_tag_set = find_item(lst=src_list_tag_sets, key=name_key, value=tag_set_name)

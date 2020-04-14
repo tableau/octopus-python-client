@@ -55,6 +55,7 @@ file_name_key = "Filename"
 id_key = 'Id'
 included_library_variable_set_ids_key = "IncludedLibraryVariableSetIds"
 items_key = 'Items'
+latest_commit_sha_key = "latest_commit_sha"
 life_cycle_id_key = "LifecycleId"
 name_key = 'Name'
 new_value_key = "NewValue"
@@ -190,8 +191,9 @@ large_types = [item_type_tasks, item_type_events]
 normal_cloneable_types = must_have_types + basic_types + complex_types
 # the types live inside space
 item_types_inside_space = normal_cloneable_types + child_types + only_all_types_inside_space + other_types
+item_types_inside_space.sort()
 # the types live outside space (Octopus server types)
-item_types_only_ourter_space = \
+item_types_only_outer_space = \
     ["authentication", "configuration/certificates", "communityactiontemplates", "externalsecuritygroupproviders",
      "featuresconfiguration", "letsencryptconfiguration", "licenses/licenses-current",
      "licenses/licenses-current-status", "maintenanceconfiguration", "octopusservernodes", "performanceconfiguration",
@@ -456,7 +458,7 @@ def get_types_save(item_types_comma_delimited=None, space_id=None):
         if space_id:
             list_item_types = item_types_inside_space
         else:
-            list_item_types = item_types_inside_space + item_types_only_ourter_space
+            list_item_types = item_types_inside_space + item_types_only_outer_space
     if config.overwrite:
         logger.info(f"===== You are downloading {list_item_types} from space {space_id}... ===== ")
     else:

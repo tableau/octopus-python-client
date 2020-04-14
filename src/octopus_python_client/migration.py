@@ -14,7 +14,7 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     item_type_runbooks, item_type_accounts, token_key, comma_sign, space_id_key, published_runbook_snapshot_id_key, \
     item_type_scoped_user_roles, user_role_id_key, team_id_key, item_type_runbook_processes, runbook_process_prefix, \
     item_id_prefix_to_type_dict, positive_integer_regex, prepare_project_versioning_strategy, log_info_print, \
-    get_one_type_ignore_error, get_single_item_by_name_or_id, log_warn_print
+    get_one_type_ignore_error, get_single_item_by_name_or_id, log_warn_print, item_types_inside_space
 from octopus_python_client.utilities.helper import find_item, save_file, find_matched_sub_list, log_raise_value_error
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,6 @@ class Migration:
         self.__type_post_func_dict = {}
         self.__type_prep_func_dict = {}
         self.__type_src_list_items_dict = {}
-        self.__item_types_set = set()
 
     # search the type in the space and see if the matched item already exists
     def __find_matched_dst_item_by_src_item(self, src_item_with_dst_ids=None, item_type=None):
@@ -433,12 +432,12 @@ class Migration:
     def __load_types(self, fake_space=False):
         if fake_space:
             log_info_print(local_logger=logger,
-                           msg=f"Reading files {self.__item_types_set} from fake space {self.__src_space_id}...")
+                           msg=f"Reading files {item_types_inside_space} from fake space {self.__src_space_id}...")
         else:
             log_info_print(local_logger=logger,
-                           msg=f"Downloading {self.__item_types_set} from space {self.__src_space_id}...")
+                           msg=f"Downloading {item_types_inside_space} from space {self.__src_space_id}...")
         actual_src_space_id = None
-        for item_type in self.__item_types_set:
+        for item_type in item_types_inside_space:
             log_info_print(local_logger=logger, msg=f"loading type {item_type} from space {self.__src_space_id}")
             # for cloning space from another Octopus server
             if fake_space:
@@ -455,13 +454,16 @@ class Migration:
                     actual_src_space_id = src_item.get(space_id_key)
                     logger.info(f"the actual source space id is {actual_src_space_id}; the fake one is "
                                 f"{self.__src_space_id}")
-                if src_item.get(id_key):
+                # TODO some items are a pure list of strings, they might be useful in the future, like variables/names
+                if isinstance(src_item, str):
+                    logger.warning(f"{item_type} {src_item} is ignored when loading")
+                elif isinstance(src_item, dict) and src_item.get(id_key):
                     self.__src_id_payload_dict[src_item.get(id_key)] = src_item
                     self.__src_id_type_dict[src_item.get(id_key)] = item_type
-                elif src_item.get(tenant_id_key):
+                elif isinstance(src_item, dict) and src_item.get(tenant_id_key):
                     self.__src_tenant_variables_payload_dict[src_item.get(tenant_id_key)] = src_item
                 else:
-                    log_raise_value_error(local_logger=logger, item=src_item, err=f"{item_type} does not have valid id")
+                    log_raise_value_error(local_logger=logger, item=src_item, err=f"{item_type} is not valid")
         if fake_space and not actual_src_space_id:
             log_raise_value_error(local_logger=logger, err=f"Could not find an actual space id inside the fake space "
                                                            f"{self.__src_space_id}")
@@ -525,8 +527,6 @@ class Migration:
                                      f"Some entities may already exist in {dst_space_id}; "
                                      f"Do you want to overwrite the existing entities? "
                                      f"If no, we will skip the existing entities. [Y/n]: ") == 'Y'
-        self.__item_types_set = set(normal_cloneable_types + process_types +
-                                    [item_type_deployment_processes, item_type_variables, item_type_tenant_variables])
         self.__initialize_maps(src_space_id=src_space_id, dst_space_id=dst_space_id, fake_space=fake_space)
         for item_type in process_types:
             if item_type in normal_cloneable_types:
@@ -544,8 +544,6 @@ class Migration:
                 f"Some entities may already exist in {dst_space_id}; "
                 f"Do you want to overwrite the existing entities? "
                 f"If no, we will skip the existing entities. [Y/n]: ") == 'Y'
-        self.__item_types_set = set(normal_cloneable_types + [item_type, item_type_deployment_processes,
-                                                              item_type_variables, item_type_tenant_variables])
         self.__initialize_maps(src_space_id=src_space_id, dst_space_id=dst_space_id, fake_space=fake_space)
         if item_type in normal_cloneable_types:
             self.__clone_item_to_space(item_type=item_type, item_name=item_name, item_id=item_id)

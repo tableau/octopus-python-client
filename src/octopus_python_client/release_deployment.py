@@ -12,7 +12,7 @@ from octopus_python_client.common import request_octopus_item, item_type_deploym
     item_type_releases, save_single_item, item_type_deployments, item_type_tenants, item_type_environments, \
     get_item_id_by_name, tenant_id_key, environment_id_key, release_id_key, comments_key, log_info_print, \
     release_versions_key, url_prefix_key, dot_sign, sha_key, author_key, newline_sign, get_list_items_from_all_items, \
-    item_type_library_variable_sets, latest_commit_sha_key
+    item_type_library_variable_sets, latest_commit_sha_key, timestamp_key
 from octopus_python_client.utilities.helper import replace_list_new_value, parse_string, find_item
 from octopus_python_client.utilities.send_requests_to_octopus import operation_post
 
@@ -56,7 +56,7 @@ class ReleaseDeployment:
         self._release_id = None
         self._commits_variable_set_name = "configuration_commits" + dot_sign + project_name
         self._gitlab_url_prefix = self._get_url_prefix(set_name="gitlab_info")
-        self._latest_commit_sha = None
+        self._latest_commit_dict = None
 
     def _get_url_prefix(self, set_name=None):
         info_service_list_variables = get_list_variables_by_set_name_or_id(set_name=set_name,
@@ -175,8 +175,9 @@ class ReleaseDeployment:
 
         # matched latest commit for the current release
         if latest_commit_variable:
-            latest_commit_dict = yaml.safe_load(latest_commit_variable.get(value_key))
-            self._latest_commit_sha = latest_commit_dict.get(sha_key)
+            latest_timestamp = latest_commit_variable.get(name_key)
+            self._latest_commit_dict = yaml.safe_load(latest_commit_variable.get(value_key))
+            self._latest_commit_dict[timestamp_key] = latest_timestamp
             latest_commit_note = self._form_single_commit_note(commit_variable=latest_commit_variable)
             list_notes.append(f"\nThe matched latest gitlab commit for this release is {latest_commit_note}")
             list_notes.append(f"\nBelow is a python dictionary read by Octopus python client in the succeeding "
@@ -184,8 +185,7 @@ class ReleaseDeployment:
                               f"last line in the release notes. '{self._commits_variable_set_name}' is the variable "
                               f"set name for the commits history and the value is the matched commit timestamp for "
                               f"this release")
-            latest_date_time = latest_commit_variable.get(name_key)
-            list_notes.append("\n{'" + f"{self._commits_variable_set_name}" + "': '" + f"{latest_date_time}" + "'}")
+            list_notes.append("\n{'" + f"{self._commits_variable_set_name}" + "': '" + f"{latest_timestamp}" + "'}")
         return newline_sign.join(list_notes)
 
     def _process_notes(self):
@@ -215,8 +215,8 @@ class ReleaseDeployment:
         logger.info(pformat(self._release_request_payload))
         self._release_response = request_octopus_item(payload=self._release_request_payload, space_id=self._space_id,
                                                       address=item_type_releases, action=operation_post)
-        if self._latest_commit_sha:
-            self._release_response[latest_commit_sha_key] = self._latest_commit_sha
+        if self._latest_commit_dict:
+            self._release_response[latest_commit_sha_key] = self._latest_commit_dict.get(sha_key)
         logger.info("the response release payload is")
         logger.info(pformat(self._release_response))
         save_single_item(item_type=item_type_releases, item=self._release_response, space_id=self._space_id)

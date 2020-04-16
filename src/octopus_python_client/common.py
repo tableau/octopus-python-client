@@ -88,6 +88,7 @@ tags_key = "Tags"
 task_id_key = "TaskId"
 team_id_key = "TeamId"
 tenant_id_key = "TenantId"
+timestamp_key = "timestamp"
 token_key = "Token"
 url_prefix_key = "url_prefix"
 user_name_key = "user_name"
@@ -171,7 +172,7 @@ must_have_types = [item_type_environments]
 # these types do not have dependencies on other types
 basic_types = [item_type_action_templates, item_type_certificates, item_type_feeds, item_type_machine_policies,
                item_type_machines, item_type_proxies, item_type_subscriptions, item_type_tag_sets,
-               item_type_teams, item_type_library_variable_sets, item_type_worker_pools]
+               item_type_library_variable_sets, item_type_worker_pools]
 # these types have links/dependencies on other types
 complex_types = [item_type_workers, item_type_life_cycles, item_type_project_groups, item_type_projects,
                  item_type_runbooks, item_type_tenants, item_type_channels, item_type_project_triggers,
@@ -185,7 +186,8 @@ only_all_types_inside_space = [item_type_variables, item_type_tenant_variables, 
 # the other types not cloneable for now
 other_types = [item_type_packages, item_type_releases, item_type_interruptions, item_type_user_onboarding,
                item_type_dashboard, item_type_dashboard_dynamic, item_type_deployments, item_type_variables_names,
-               item_type_artifacts, item_type_home, item_type_scoped_user_roles, item_type_runbook_snapshots]
+               item_type_artifacts, item_type_home, item_type_scoped_user_roles, item_type_runbook_snapshots,
+               item_type_teams]
 # too many items in them, so ignore for now
 large_types = [item_type_tasks, item_type_events]
 # the types which are cloneable

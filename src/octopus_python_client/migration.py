@@ -3,18 +3,18 @@ import logging
 import re
 from time import gmtime, strftime
 
-from octopus_python_client.common import name_key, tags_key, id_key, item_type_tag_sets, post_single_item_save, \
-    item_type_projects, get_list_items_from_file, item_type_deployment_processes, deployment_process_id_key, config, \
-    put_single_item_save, normal_cloneable_types, get_list_items_from_all_items, version_key, must_have_types, \
+from octopus_python_client.common import name_key, tags_key, id_key, item_type_tag_sets, item_type_projects, \
+    get_list_items_from_file, item_type_deployment_processes, deployment_process_id_key, config, scope_values_key, \
+    inside_space_clone_types, get_list_items_from_all_items, version_key, inside_space_download_types, \
     item_type_library_variable_sets, item_type_variables, variable_set_id_key, get_or_delete_single_item_by_id, \
     item_type_tenant_variables, canonical_tag_name_key, item_type_tags, tenant_id_key, item_type_migration, space_map, \
     get_local_single_item_file, put_single_item, item_type_tenants, slash_sign, underscore_sign, item_type_feeds, \
     secret_key_key, new_value_key, hyphen_sign, item_type_channels, project_id_key, item_type_releases, \
-    item_type_artifacts, file_name_key, put_post_tenant_variables_save, get_one_type_to_list, runbook_process_id_key, \
+    item_type_artifacts, file_name_key, put_post_tenant_variables, get_one_type_to_list, runbook_process_id_key, \
     item_type_runbooks, item_type_accounts, token_key, comma_sign, space_id_key, published_runbook_snapshot_id_key, \
     item_type_scoped_user_roles, user_role_id_key, team_id_key, item_type_runbook_processes, runbook_process_prefix, \
     item_id_prefix_to_type_dict, positive_integer_regex, prepare_project_versioning_strategy, log_info_print, \
-    get_one_type_ignore_error, get_single_item_by_name_or_id, log_warn_print, item_types_inside_space, scope_values_key
+    get_one_type_ignore_error, get_single_item_by_name_or_id, log_warn_print, post_single_item
 from octopus_python_client.utilities.helper import find_item, save_file, find_matched_sub_list, log_raise_value_error
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,7 @@ class Migration:
             match_dict = {version_key: src_item_with_dst_ids.get(version_key),
                           project_id_key: src_item_with_dst_ids.get(project_id_key)}
         # TODO cloning scopeduserroles is not working and may not be necessary; some space id is null;
+        # https://help.octopus.com/t/scopeduserrole-api-does-not-match-swagger-doc/24980
         elif item_type == item_type_scoped_user_roles:
             match_dict = {user_role_id_key: src_item_with_dst_ids.get(user_role_id_key),
                           team_id_key: src_item_with_dst_ids.get(team_id_key)}
@@ -198,8 +199,13 @@ class Migration:
                                    f"{src_item_copy.get(id_key)}")
                     src_item_copy[runbook_process_id_key] = matched_runbook_process_id
 
-                dst_item = put_single_item_save(item_type=item_type, payload=src_item_copy,
-                                                space_id=self._dst_space_id)
+                # # TODO for update/put the version must match (maybe need later)
+                # # dst_item.get(version_key) could be zero
+                # if dst_item.get(version_key) is not None:
+                #     logger.info(f"{version_key} is updated to {dst_item.get(version_key)}")
+                #     src_item_copy[version_key] = dst_item.get(version_key)
+
+                dst_item = put_single_item(item_type=item_type, payload=src_item_copy, space_id=self._dst_space_id)
             else:
                 log_info_print(local_logger=logger,
                                msg=f"{self._dst_space_id} already has {item_type} {src_item_name} "
@@ -207,7 +213,7 @@ class Migration:
         else:
             logger.info(f"destination space {self._dst_space_id} does not have {item_type} {src_item_name} "
                         f"{src_id_value} from space {self._src_space_id}, so creating it...")
-            dst_item = post_single_item_save(item_type=item_type, payload=src_item_copy, space_id=self._dst_space_id)
+            dst_item = post_single_item(item_type=item_type, payload=src_item_copy, space_id=self._dst_space_id)
             log_info_print(local_logger=logger,
                            msg=f"{item_type} {src_item_name} {src_id_value} in space {self._src_space_id} was cloned "
                                f"to space {self._dst_space_id} as {dst_item.get(id_key)} successfully")
@@ -331,7 +337,8 @@ class Migration:
                     self._replace_ids(dict_list=element)
         # None, boolean, integer, float etc
         else:
-            logger.info(f"the type is {type(dict_list)} and value is {dict_list}; skip it")
+            pass
+            # logger.info(f"the type is {type(dict_list)} and value is {dict_list}; skip it")
 
     def _clone_child(self, src_parent_id=None, dst_parent_id=None, child_type=None, child_id_key=None):
         # source item
@@ -363,8 +370,12 @@ class Migration:
         # if ScopeValues is not popped, all scopes will be cloned recursively even if some of them are not used at all  
         src_child_copy.pop(scope_values_key, None)
 
-        src_child_copy[version_key] = dst_child.get(version_key)
         self._replace_ids(dict_list=src_child_copy)
+
+        # for update/put the version must match; dst_child.get(version_key) could be zero
+        if dst_child.get(version_key) is not None:
+            logger.info(f"child {version_key} is updated to {dst_child.get(version_key)}")
+            src_child_copy[version_key] = dst_child.get(version_key)
 
         dst_child = put_single_item(item_type=child_type, payload=src_child_copy, space_id=self._dst_space_id)
         self._dst_id_payload_dict[dst_child_id] = dst_child
@@ -412,8 +423,8 @@ class Migration:
 
         self._replace_ids(dict_list=src_tenant_variables_copy)
 
-        dst_tenant_variables = put_post_tenant_variables_save(tenant_id=dst_id, space_id=self._dst_space_id,
-                                                              tenant_variables=src_tenant_variables_copy)
+        dst_tenant_variables = put_post_tenant_variables(tenant_id=dst_id, space_id=self._dst_space_id,
+                                                         tenant_variables=src_tenant_variables_copy)
 
         self._dst_tenant_variables_payload_dict[dst_id] = dst_tenant_variables
 
@@ -436,9 +447,8 @@ class Migration:
                 logger.info(f"{item_type_tag_sets} {dst_tag_set.get(name_key)} does not have {item_id} in "
                             f"{self._dst_space_id}, add it")
                 dst_tag_set.get(tags_key).append(src_tag_copy)
-                dst_tag_set = put_single_item_save(item_type=item_type_tag_sets, payload=dst_tag_set,
-                                                   space_id=self._dst_space_id,
-                                                   overwrite=True)
+                dst_tag_set = put_single_item(item_type=item_type_tag_sets, payload=dst_tag_set,
+                                              space_id=self._dst_space_id)
             else:
                 logger.info(f"{item_type_tag_sets} {dst_tag_set.get(name_key)} already has {item_id} in "
                             f"{self._dst_space_id}, skip")
@@ -448,8 +458,8 @@ class Migration:
             dst_tag_set = copy.deepcopy(src_tag_set)
             dst_tag_set.pop(id_key, None)
             dst_tag_set[tags_key] = [src_tag_copy]
-            dst_tag_set = post_single_item_save(item_type=item_type_tag_sets, payload=dst_tag_set,
-                                                space_id=self._dst_space_id)
+            dst_tag_set = post_single_item(item_type=item_type_tag_sets, payload=dst_tag_set,
+                                           space_id=self._dst_space_id)
         self._src_id_vs_dst_id_dict[item_id] = item_id
         self._dst_id_payload_dict[item_id] = find_item(lst=dst_tag_set.get(tags_key), key=canonical_tag_name_key,
                                                        value=item_id)
@@ -458,12 +468,12 @@ class Migration:
     def _load_types(self, fake_space=False):
         if fake_space:
             log_info_print(local_logger=logger,
-                           msg=f"Reading files {item_types_inside_space} from fake space {self._src_space_id}...")
+                           msg=f"Reading files {inside_space_download_types} from fake space {self._src_space_id}...")
         else:
             log_info_print(local_logger=logger,
-                           msg=f"Downloading {item_types_inside_space} from space {self._src_space_id}...")
+                           msg=f"Downloading {inside_space_download_types} from space {self._src_space_id}...")
         actual_src_space_id = None
-        for item_type in item_types_inside_space:
+        for item_type in inside_space_download_types:
             log_info_print(local_logger=logger, msg=f"loading type {item_type} from space {self._src_space_id}")
             # for cloning space from another Octopus server
             if fake_space:
@@ -544,9 +554,9 @@ class Migration:
 
     def clone_space(self, src_space_id=None, dst_space_id=None, item_types_comma_delimited=None, fake_space=False):
         if item_types_comma_delimited:
-            process_types = must_have_types + item_types_comma_delimited.split(comma_sign)
+            process_types = item_types_comma_delimited.split(comma_sign)
         else:
-            process_types = normal_cloneable_types
+            process_types = inside_space_clone_types
         log_info_print(local_logger=logger, msg=f"cloning {process_types} from {src_space_id} to {dst_space_id}...")
         if not config.overwrite:
             config.overwrite = input(f"You are cloning {process_types} from {src_space_id} to {dst_space_id}; "
@@ -555,7 +565,7 @@ class Migration:
                                      f"If no, we will skip the existing entities. [Y/n]: ") == 'Y'
         self._initialize_maps(src_space_id=src_space_id, dst_space_id=dst_space_id, fake_space=fake_space)
         for item_type in process_types:
-            if item_type in normal_cloneable_types:
+            if item_type in inside_space_clone_types:
                 self._clone_type_to_space(item_type=item_type)
         self._save_space_map()
 
@@ -571,7 +581,7 @@ class Migration:
                 f"Do you want to overwrite the existing entities? "
                 f"If no, we will skip the existing entities. [Y/n]: ") == 'Y'
         self._initialize_maps(src_space_id=src_space_id, dst_space_id=dst_space_id, fake_space=fake_space)
-        if item_type in normal_cloneable_types:
+        if item_type in inside_space_clone_types:
             self._clone_item_to_space(item_type=item_type, item_name=item_name, item_id=item_id)
         self._save_space_map()
 

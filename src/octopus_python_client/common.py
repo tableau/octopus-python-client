@@ -147,6 +147,7 @@ item_type_teams = "teams"
 item_type_tenants = "tenants"
 item_type_tenant_variables = "tenantvariables"
 item_type_user_onboarding = "useronboarding"
+item_type_user_roles = "userroles"
 item_type_users = "users"
 item_type_variables = "variables"
 item_type_variables_names = "variables/names"
@@ -167,42 +168,61 @@ item_types_with_duplicate_names = \
 item_types_without_single_item = \
     {item_type_dashboard, item_type_dashboard_dynamic, item_type_variables, item_type_variables_names}
 
-# must have for a space to work
-must_have_types = [item_type_environments]
-# these types do not have dependencies on other types
-basic_types = [item_type_action_templates, item_type_certificates, item_type_feeds, item_type_machine_policies,
-               item_type_machines, item_type_proxies, item_type_subscriptions, item_type_tag_sets,
-               item_type_library_variable_sets, item_type_worker_pools]
-# these types have links/dependencies on other types
-complex_types = [item_type_workers, item_type_life_cycles, item_type_project_groups, item_type_projects,
-                 item_type_runbooks, item_type_tenants, item_type_channels, item_type_project_triggers,
-                 item_type_accounts, item_type_build_information]
-# these types have only one item in a space; they are mostly space properties
-space_single_item_types = [item_type_dashboard_configuration]
+# the types are leveled by dependency relationship like a tree;
+# the first level has not dependency to other types;
+# the second level has dependency on the first level;
+# the third level has the dependency on the first and/or the second, and so on;
+# TODO item_type_build_information needs investigation (lacks real example as of 4/19/2020)
+# TODO item_type_dashboard_configuration is a single data, so no list return, but we can still clone it
+# TODO item_type_teams can be cloned from space to space and server to server if users are cloned by outer_space
+# TODO item_type_scoped_user_roles (needs userroles)
+# bug https://help.octopus.com/t/scopeduserrole-api-does-not-match-swagger-doc/24980
+# TODO item_type_packages (need to change requests to get package)
+# item_type_library_variable_sets seems like the leaf node but it contains variables with scope of other types
+inside_space_level_types = \
+    [[item_type_environments, item_type_feeds, item_type_machine_policies, item_type_proxies, item_type_tag_sets,
+      item_type_worker_pools],
+     [item_type_action_templates, item_type_library_variable_sets, item_type_life_cycles, item_type_project_groups,
+      item_type_teams, item_type_workers],
+     [item_type_projects],
+     [item_type_channels, item_type_runbooks, item_type_tenants],
+     [item_type_accounts, item_type_build_information, item_type_certificates, item_type_dashboard_configuration,
+      item_type_machines, item_type_project_triggers, item_type_subscriptions]]
+
 # these types are the child type of another type
-child_types = [item_type_deployment_processes, item_type_runbook_processes]
+inside_space_child_types = [item_type_deployment_processes, item_type_runbook_processes]
 # these types needs "/all" to get all items for this type
-only_all_types_inside_space = [item_type_variables, item_type_tenant_variables, item_type_machine_roles]
+inside_space_only_all_types = [item_type_variables, item_type_tenant_variables, item_type_machine_roles]
 # the other types not cloneable for now
-other_types = [item_type_packages, item_type_releases, item_type_interruptions, item_type_user_onboarding,
-               item_type_dashboard, item_type_dashboard_dynamic, item_type_deployments, item_type_variables_names,
-               item_type_artifacts, item_type_home, item_type_scoped_user_roles, item_type_runbook_snapshots,
-               item_type_teams]
-# too many items in them, so ignore for now
-large_types = [item_type_tasks, item_type_events]
-# the types which are cloneable
-normal_cloneable_types = must_have_types + basic_types + complex_types
+inside_space_other_types = \
+    [item_type_packages, item_type_releases, item_type_interruptions, item_type_user_onboarding, item_type_dashboard,
+     item_type_dashboard_dynamic, item_type_deployments, item_type_variables_names, item_type_artifacts, item_type_home,
+     item_type_runbook_snapshots]
+
+# too many items in them, so do not download or clone for now
+inside_space_large_types = [item_type_tasks, item_type_events]
+
+# the cloneable types which is the flattened inside_space_level_types and the order is maintained
+inside_space_clone_types = sum(inside_space_level_types, [])
+
 # the types live inside space
-item_types_inside_space = normal_cloneable_types + child_types + only_all_types_inside_space + other_types
-item_types_inside_space.sort()
+inside_space_download_types = inside_space_clone_types + inside_space_child_types + inside_space_only_all_types + \
+                              inside_space_other_types
+inside_space_download_types.sort()
+
 # the types live outside space (Octopus server types)
-item_types_only_outer_space = \
+# TODO clone the outer space
+outer_space_level_types = [[item_type_users, item_type_user_roles],
+                           [item_type_scoped_user_roles]]
+
+outer_space_download_types = \
     ["authentication", "configuration/certificates", "communityactiontemplates", "externalsecuritygroupproviders",
      "featuresconfiguration", "letsencryptconfiguration", "licenses/licenses-current",
      "licenses/licenses-current-status", "maintenanceconfiguration", "octopusservernodes", "performanceconfiguration",
      "permissions/all", "scheduler", "serverconfiguration", "serverconfiguration/settings", "serverstatus",
-     "smtpconfiguration", "smtpconfiguration/isconfigured", "upgradeconfiguration", item_type_users, "userroles",
-     item_type_configuration, item_type_spaces]
+     "smtpconfiguration", "smtpconfiguration/isconfigured", "upgradeconfiguration", item_type_configuration,
+     item_type_spaces] + sum(outer_space_level_types, [])
+
 # the sub item map for a specific type; this is for deleting the unused sub items when the item cannot be deleted
 # e.g. tagsets: Tags is the key to get the list of the sub items; CanonicalTagName is for printing purpose
 item_type_sub_item_map = {item_type_tag_sets: (tags_key, canonical_tag_name_key)}
@@ -391,7 +411,7 @@ def get_one_type_ignore_error(item_type=None, space_id=None):
         if item_type == item_type_home:
             logger.info(f"getting space {space_id} home page")
             return call_octopus(config=config, url_suffix=space_url)
-        if item_type in only_all_types_inside_space:
+        if item_type in inside_space_only_all_types:
             logger.info(f"{item_type} can only be downloaded by {slash_all}")
             url_suffix = space_url + item_type + slash_all
             return call_octopus(config=config, url_suffix=url_suffix)
@@ -433,6 +453,28 @@ def get_one_type_save(item_type=None, space_id=None, overwrite=False):
     return all_items
 
 
+def delete_types(item_types_comma_delimited=None, space_id=None):
+    # always delete the parent types before deleting dependency types, otherwise deleting parent will fail
+    if item_types_comma_delimited:
+        selected_types = item_types_comma_delimited.split(comma_sign)
+        list_item_types = []
+        for item_type in reversed(inside_space_clone_types):
+            if item_type in selected_types:
+                list_item_types.append(item_type)
+        logger.info(f"deleting reordered specified types {list_item_types}")
+    else:
+        list_item_types = list(reversed(inside_space_clone_types))
+        logger.info(f"no item types specified, so deleting all cloneable types {list_item_types} in reverse order")
+    if not config.overwrite:
+        if input(f"Are you sure to delete item types {list_item_types} in {space_id}? [Y/n]: ") == 'Y':
+            config.overwrite = True
+        else:
+            return
+    log_info_print(local_logger=logger, msg=f"deleting item types {list_item_types} in space {space_id}...")
+    for item_type in list_item_types:
+        delete_one_type(item_type=item_type, space_id=space_id)
+
+
 # delete all items for an item_type by call Octopus API /api/{space_id}/item_type
 # then save the all items into a local file (warning for overwrite)
 def delete_one_type(item_type=None, space_id=None):
@@ -446,10 +488,16 @@ def delete_one_type(item_type=None, space_id=None):
             return
     all_items = get_one_type_ignore_error(item_type=item_type, space_id=space_id)
     if item_type in item_types_without_single_item:
-        logger.info(f"{item_type} has no sub-single-item, exit")
+        log_info_print(local_logger=logger, msg=f"{item_type} has no sub-single-item, skip")
         return
-    for item in get_list_items_from_all_items(all_items=all_items):
-        delete_single_item_by_name_or_id(item_type=item_type, item_id=item.get(id_key), space_id=space_id)
+    list_items = get_list_items_from_all_items(all_items=all_items)
+    if list_items:
+        for item in list_items:
+            log_info_print(local_logger=logger,
+                           msg=f"try to delete {item_type} '{item.get(name_key)}' {item.get(id_key)} in {space_id}...")
+            delete_single_item_by_name_or_id(item_type=item_type, item_id=item.get(id_key), space_id=space_id)
+    else:
+        log_info_print(local_logger=logger, msg=f"{item_type} does not include single item to delete, skip")
 
 
 # get all items for all item_type(s) by call Octopus API /api/{space_id}/item_type with 'get' operation
@@ -459,9 +507,9 @@ def get_types_save(item_types_comma_delimited=None, space_id=None):
         list_item_types = item_types_comma_delimited.split(comma_sign)
     else:
         if space_id:
-            list_item_types = item_types_inside_space
+            list_item_types = inside_space_download_types
         else:
-            list_item_types = item_types_inside_space + item_types_only_outer_space
+            list_item_types = inside_space_download_types + outer_space_download_types
     if config.overwrite:
         logger.info(f"===== You are downloading {list_item_types} from space {space_id}... ===== ")
     else:
@@ -550,19 +598,28 @@ def get_tenant_variables_save(tenant_id=None, space_id=None):
     return tenant_variables
 
 
-# put/post tenant variables
-def put_post_tenant_variables_save(tenant_id=None, space_id=None, tenant_variables=None):
+def put_post_tenant_variables(tenant_id=None, space_id=None, tenant_variables=None):
+    logger.info(f"put or post tenant variables for an existing tenant {tenant_id} in {space_id}")
     address = item_type_tenants + slash_sign + tenant_id + slash_sign + item_type_variables
     remote_tenant_variables = request_octopus_item(space_id=space_id, address=address)
     if remote_tenant_variables:
+        logger.info(f"the tenant variables exist in {tenant_id} in {space_id}, so overwrite")
         logger.info(f"tenant {tenant_id} has existing variables, so put the variables")
         remote_tenant_variables = request_octopus_item(payload=tenant_variables, space_id=space_id, address=address,
                                                        action=operation_put)
     else:
         # TODO add a log to see if any "POST" exist, it may be an Octopus bug
-        logger.info(f"tenant {tenant_id} has no variables, so post the variables")
+        logger.warning(f"tenant {tenant_id} has no variables, so post the variables")
         remote_tenant_variables = request_octopus_item(payload=tenant_variables, space_id=space_id, address=address,
                                                        action=operation_post)
+    return remote_tenant_variables
+
+
+# put/post tenant variables and save to local file
+def put_post_tenant_variables_save(tenant_id=None, space_id=None, tenant_variables=None):
+    logger.info(f"put or post tenant variables for an existing tenant {tenant_id} in {space_id} and save to a file")
+    remote_tenant_variables = put_post_tenant_variables(tenant_id=tenant_id, space_id=space_id,
+                                                        tenant_variables=tenant_variables)
     tenant_variables_file = get_local_single_item_file(item_name=tenant_id + underscore_sign + item_type_variables,
                                                        item_type=item_type_tenant_variables, space_id=space_id)
     save_file(file_path_name=tenant_variables_file, content=remote_tenant_variables)

@@ -1,3 +1,4 @@
+import json
 import logging
 import sys
 from types import SimpleNamespace
@@ -63,8 +64,13 @@ def call_octopus(config=None, url_suffix=None, operation=None, payload=None):
 
 
 # TODO for testing purpose, to be removed
-if __name__ == "__main__":
+def run():
+    print("==================== test octopus http requests ===================")
     octopus_config = {"octopus_endpoint": "https://demo.octopusdeploy.com/api/", "api_key": None, "user_name": "guest",
                       "password": "guest"}
     response = call_octopus(config=SimpleNamespace(**octopus_config), url_suffix="Spaces-1/environments")
-    logger.info(response)
+    print(json.dumps(response))
+
+
+if __name__ == "__main__":
+    run()

@@ -12,7 +12,7 @@ from octopus_python_client.common import request_octopus_item, item_type_deploym
     item_type_releases, save_single_item, item_type_deployments, item_type_tenants, item_type_environments, \
     get_item_id_by_name, tenant_id_key, environment_id_key, release_id_key, comments_key, log_info_print, \
     release_versions_key, url_prefix_key, dot_sign, sha_key, author_key, newline_sign, get_list_items_from_all_items, \
-    item_type_library_variable_sets, latest_commit_sha_key, timestamp_key
+    item_type_library_variable_sets, latest_commit_sha_key, timestamp_key, title_key
 from octopus_python_client.utilities.helper import replace_list_new_value, parse_string, find_item
 from octopus_python_client.utilities.send_requests_to_octopus import operation_post
 
@@ -109,7 +109,7 @@ class ReleaseDeployment:
         date_time = commit_variable.get(name_key)
         commit_yaml = commit_variable.get(value_key)
         commit_dict = yaml.safe_load(commit_yaml)
-        return f"- {date_time} - {sha_key}: [{commit_dict.get(sha_key)}]({self._gitlab_url_prefix}" \
+        return f"- {date_time} - {title_key}: [{commit_dict.get(title_key)}]({self._gitlab_url_prefix}" \
                f"{commit_dict.get(sha_key)}) - {commit_dict.get(author_key)}"
 
     def _generate_commits_notes(self):

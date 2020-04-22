@@ -2,8 +2,6 @@ import json
 import logging
 from pprint import pformat
 
-import yaml
-
 from octopus_python_client.common import request_octopus_item, item_type_deployment_processes, verify_space, \
     item_type_projects, get_single_item_by_name, id_key, deployment_process_id_key, item_type_channels, \
     find_sub_by_item, packages_key, action_name_key, package_reference_name_key, feed_id_key, package_id_key, \
@@ -12,7 +10,7 @@ from octopus_python_client.common import request_octopus_item, item_type_deploym
     item_type_releases, save_single_item, item_type_deployments, item_type_tenants, item_type_environments, \
     get_item_id_by_name, tenant_id_key, environment_id_key, release_id_key, comments_key, log_info_print, \
     release_versions_key, url_prefix_key, dot_sign, sha_key, author_key, newline_sign, get_list_items_from_all_items, \
-    item_type_library_variable_sets, latest_commit_sha_key, timestamp_key
+    item_type_library_variable_sets, latest_commit_sha_key, timestamp_key, title_key, hyphen_sign
 from octopus_python_client.utilities.helper import replace_list_new_value, parse_string, find_item
 from octopus_python_client.utilities.send_requests_to_octopus import operation_post
 
@@ -107,9 +105,11 @@ class ReleaseDeployment:
 
     def _form_single_commit_note(self, commit_variable=None):
         date_time = commit_variable.get(name_key)
-        commit_yaml = commit_variable.get(value_key)
-        commit_dict = yaml.safe_load(commit_yaml)
-        return f"- {date_time} - {sha_key}: [{commit_dict.get(sha_key)}]({self._gitlab_url_prefix}" \
+        commit_json = commit_variable.get(value_key)
+        commit_dict = json.loads(commit_json)
+        title = ". ".join(commit_dict.get(title_key)) if isinstance(commit_dict.get(title_key), list) else \
+            str(commit_dict.get(title_key))
+        return f"- {date_time} - [{title}]({self._gitlab_url_prefix}" \
                f"{commit_dict.get(sha_key)}) - {commit_dict.get(author_key)}"
 
     def _generate_commits_notes(self):
@@ -122,7 +122,8 @@ class ReleaseDeployment:
         prev_release_match_commit_date_time = ""
         list_notes = ["\n========== below is auto-generated notes =========="]
         if list_releases:
-            prev_release = max(list_releases, key=lambda release: release.get(id_key))
+            # In literal string: Releases-10000 < Releases-9999 so converting to integer to compare
+            prev_release = max(list_releases, key=lambda release: int(release.get(id_key).split(hyphen_sign)[1]))
             logger.info(f"the latest release for project {self._project_id} is {prev_release.get(id_key)}")
             if prev_release.get(release_notes_key):
                 logger.info(f"found the notes in the previous release {prev_release.get(id_key)} and try to get the"
@@ -176,7 +177,7 @@ class ReleaseDeployment:
         # matched latest commit for the current release
         if latest_commit_variable:
             latest_timestamp = latest_commit_variable.get(name_key)
-            self._latest_commit_dict = yaml.safe_load(latest_commit_variable.get(value_key))
+            self._latest_commit_dict = json.loads(latest_commit_variable.get(value_key))
             self._latest_commit_dict[timestamp_key] = latest_timestamp
             latest_commit_note = self._form_single_commit_note(commit_variable=latest_commit_variable)
             list_notes.append(f"\nThe matched latest gitlab commit for this release is {latest_commit_note}")

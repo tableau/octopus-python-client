@@ -4,11 +4,10 @@ import os
 import time
 from pprint import pformat
 
-from octopus_python_client.utilities.helper import compare_overwrite, find_item, compare_dicts, load_file, save_file
+from octopus_python_client.utilities.helper import compare_overwrite, find_item, load_file, save_file, \
+    is_local_same_as_remote2
 from octopus_python_client.utilities.send_requests_to_octopus import call_octopus, operation_get, operation_post, \
     operation_put, operation_delete
-
-logger = logging.getLogger(__name__)
 
 # constants
 all_underscore = "all_"
@@ -213,8 +212,11 @@ inside_space_download_types.sort()
 
 # the types live outside space (Octopus server types)
 # TODO clone the outer space
-outer_space_level_types = [[item_type_users, item_type_user_roles],
-                           [item_type_scoped_user_roles]]
+outer_space_level_types = \
+    [[item_type_spaces],
+     [item_type_users, item_type_user_roles],
+     [item_type_teams],
+     [item_type_scoped_user_roles]]
 
 outer_space_download_types = \
     ["authentication", "configuration/certificates", "communityactiontemplates", "externalsecuritygroupproviders",
@@ -237,8 +239,10 @@ class Config:
         self.api_key = None
         self.user_name = None
         self.password = None
+        self.space_id = None
         self.overwrite = False
         self.no_stdout = False
+        self.fake_space = False
         self.current_path = None
         self.get_config()
 
@@ -256,804 +260,736 @@ class Config:
         self.current_path = os.getcwd()
 
 
-config = Config()
+class Common:
+    def __init__(self, config, logger=None):
+        self.config = config
+        self.logger = logger if logger else logging.getLogger(self.__class__.__name__)
 
+    def log_info_print(self, msg, local_logger=None, item=None):
+        if not local_logger:
+            local_logger = self.logger
+        local_logger.info(msg)
+        if not self.config.no_stdout:
+            print(msg)
+        if item:
+            local_logger.info(pformat(item))
 
-def log_info_print(local_logger=logger, item=None, msg=None):
-    local_logger.info(msg)
-    if item:
-        local_logger.info(pformat(item))
-    if not config.no_stdout:
-        print(msg)
+    def log_warn_print(self, msg, local_logger=None, item=None):
+        if not local_logger:
+            local_logger = self.logger
+        local_logger.warning(msg)
+        if not self.config.no_stdout:
+            print(msg)
+        if item:
+            local_logger.info(pformat(item))
 
+    # TODO once the migration supports packages; we do not have to pre-process VersioningStrategy for cloning project
+    def prepare_project_versioning_strategy(self, project):
+        self.logger.warning(f"prepare project {project.get(name_key)} for cloning by removing packages from "
+                            f"{versioning_strategy_key}; once the migration supports packages; we can stop doing it")
+        project.get(versioning_strategy_key)[donor_package_key] = None
+        project.get(versioning_strategy_key)[donor_package_step_id_key] = None
 
-def log_warn_print(local_logger=logger, item=None, msg=None):
-    local_logger.warning(msg)
-    if item:
-        local_logger.info(pformat(item))
-    if not config.no_stdout:
-        print(msg)
+    def get_list_ids_one_type(self, item_type):
+        list_items = self.get_one_type_to_list(item_type=item_type)
+        return [item.get(id_key) for item in list_items]
 
+    def verify_space(self, space_id_name):
+        list_spaces = self.get_one_type_to_list(item_type=item_type_spaces)
+        space = find_item(lst=list_spaces, key=id_key, value=space_id_name)
+        if space:
+            return space.get(id_key)
+        space = self.find_single_item_from_list_by_name(list_items=list_spaces, item_name=space_id_name)
+        if space:
+            return space.get(id_key)
+        return None
 
-# TODO once the migration supports clone packages; we do not have to pre-process VersioningStrategy for cloning project
-def prepare_project_versioning_strategy(project=None):
-    logger.warning(f"prepare project {project.get(name_key)} for cloning by removing packages from "
-                   f"{versioning_strategy_key}; TODO once the migration supports clone packages; we can stop doing it")
-    project.get(versioning_strategy_key)[donor_package_key] = None
-    project.get(versioning_strategy_key)[donor_package_step_id_key] = None
+    # remove the unnecessary modified date/user information from put and post operations
+    @staticmethod
+    def pop_last_modified(a_dict):
+        if isinstance(a_dict, dict):
+            a_dict.pop('LastModifiedOn', None)
+            a_dict.pop('LastModifiedBy', None)
 
-
-def get_list_ids_one_type(item_type=None, space_id=None):
-    list_items = get_one_type_to_list(item_type=item_type, space_id=space_id)
-    return [item.get(id_key) for item in list_items]
-
-
-def verify_space(space_id_name=None):
-    list_spaces = get_one_type_to_list(item_type=item_type_spaces)
-    space = find_item(lst=list_spaces, key=id_key, value=space_id_name)
-    if space:
-        return space.get(id_key)
-    space = find_single_item_from_list_by_name(list_items=list_spaces, item_name=space_id_name)
-    if space:
-        return space.get(id_key)
-    return None
-
-
-# remove the unnecessary modified date/user information from put and post operations
-def pop_last_modified(a_dict=None):
-    if isinstance(a_dict, dict):
-        a_dict.pop('LastModifiedOn', None)
-        a_dict.pop('LastModifiedBy', None)
-
-
-def always_overwrite_or_compare_overwrite(local_file=None, data=None, overwrite=False):
-    if not local_file or not str(data):
-        raise ValueError("local_file and data must not be empty")
-    if config.overwrite or overwrite:
-        save_file(file_path_name=local_file, content=data)
-        logger.info(f'A new local file {local_file} was written with the data')
-    else:
-        compare_overwrite(data=data, local_file=local_file)
-
-
-# local child item file based on parent item
-def get_local_child_file(parent_name=None, child_type=None, space_id=None):
-    parent_name = parent_name.replace(slash_sign, underscore_sign)
-    child_type = child_type.replace(slash_sign, underscore_sign)
-    if space_id:
-        return os.path.join(config.current_path, config.octopus_name, space_id, child_type,
-                            parent_name + underscore_sign + child_type + yaml_ext)
-    else:
-        return os.path.join(config.current_path, config.octopus_name, folder_outer_spaces, child_type,
-                            parent_name + underscore_sign + child_type + yaml_ext)
-
-
-# get the local single item file from config.current_path, space_id, item type, file_name;
-# for spaces files, no space_id needed
-def get_local_single_item_file(item_name=None, item_type=None, space_id=None):
-    item_type = item_type.replace(slash_sign, underscore_sign)
-    item_name = item_name.replace(slash_sign, underscore_sign)
-    if space_id:
-        return os.path.join(config.current_path, config.octopus_name, space_id, item_type, item_name + yaml_ext)
-    else:
-        return os.path.join(config.current_path, config.octopus_name, folder_outer_spaces, item_type,
-                            item_name + yaml_ext)
-
-
-# get the local all items file from config.current_path, space_id, item type;
-# for spaces files, no space_id needed
-def get_local_all_items_file(item_type=None, space_id=None):
-    item_type_name = item_type.replace(slash_sign, underscore_sign)
-    if space_id:
-        return os.path.join(config.current_path, config.octopus_name, space_id, item_type_name,
-                            all_underscore + item_type_name + yaml_ext)
-    else:
-        return os.path.join(config.current_path, config.octopus_name, folder_outer_spaces, item_type_name,
-                            all_underscore + item_type_name + yaml_ext)
-
-
-# get local item file smartly; three possibilities
-# use 'Name'
-# use 'Id' if 'Name' not available
-# use item_type if neither 'Id' nor 'Name' available
-def get_local_single_item_file_from_item(item=None, item_type=None, space_id=None):
-    if not item or not item_type:
-        raise ValueError("item and item_type must not be empty!")
-    if item.get(name_key) and item_type not in item_types_with_duplicate_names:
-        local_item_file = get_local_single_item_file(item_name=item[name_key], item_type=item_type, space_id=space_id)
-    elif item.get(id_key):
-        local_item_file = get_local_single_item_file(item_name=item[id_key], item_type=item_type, space_id=space_id)
-    else:
-        local_item_file = get_local_single_item_file(item_name=item_type, item_type=item_type, space_id=space_id)
-    return local_item_file
-
-
-# check if the local item file is the same as the remote item on Octopus server;
-# the remote item will be retrieved on the fly
-def is_local_same_as_remote(item_type=None, item_name=None, item_id=None, space_id=None):
-    if not item_type or not item_name and not item_id:
-        raise ValueError("item_type and item_name/item_id must not be empty")
-    if item_name:
-        remote_item = get_single_item_by_name(item_type=item_type, item_name=item_name, space_id=space_id)
-        local_item_file = get_local_single_item_file(item_name=item_name, item_type=item_type, space_id=space_id)
-    else:
-        remote_item = get_or_delete_single_item_by_id(item_type=item_type, item_id=item_id, space_id=space_id)
-        local_item_file = get_local_single_item_file(item_name=item_id, item_type=item_type, space_id=space_id)
-    is_same, local_item = is_local_same_as_remote2(remote_item=remote_item, local_item_file=local_item_file)
-    return is_same, local_item, remote_item
-
-
-# check if the local item file is the same as the item on Octopus server
-# the remote item is an input
-def is_local_same_as_remote2(remote_item=None, local_item_file=None):
-    if not remote_item or not local_item_file:
-        raise ValueError('remote_item and local_item_file must not be empty')
-    local_item = load_file(local_item_file)
-    return compare_dicts(local_item, remote_item), local_item
-
-
-# compare in memory all items with the local all items and overwrite if user wants
-def compare_overwrite_multiple_items(items=None, item_type=None, space_id=None, overwrite=False):
-    if not item_type:
-        raise ValueError('item_type must not be empty')
-    local_all_items_file = get_local_all_items_file(item_type=item_type, space_id=space_id)
-    logger.info('compare and write: ' + local_all_items_file)
-    always_overwrite_or_compare_overwrite(local_file=local_all_items_file, data=items, overwrite=overwrite)
-
-
-# get all items for an item_type by call Octopus API /api/{space_id}/item_type with 'get' operation
-# {space_id} is optional
-def get_one_type_ignore_error(item_type=None, space_id=None):
-    logger.info(f"getting all items of {item_type} in space {space_id}")
-    if not item_type:
-        raise ValueError("item_type must not be empty")
-    space_url = space_id + slash_sign if space_id else ""
-    try:
-        if item_type == item_type_home:
-            logger.info(f"getting space {space_id} home page")
-            return call_octopus(config=config, url_suffix=space_url)
-        if item_type in inside_space_only_all_types:
-            logger.info(f"{item_type} can only be downloaded by {slash_all}")
-            url_suffix = space_url + item_type + slash_all
-            return call_octopus(config=config, url_suffix=url_suffix)
+    def always_overwrite_or_compare_overwrite(self, local_file, data, overwrite=False):
+        if not local_file or not str(data):
+            raise ValueError("local_file and data must not be empty")
+        if self.config.overwrite or overwrite:
+            save_file(file_path_name=local_file, content=data)
+            self.logger.info(f'A new local file {local_file} was written with the data')
         else:
-            url_suffix = space_url + item_type + url_all_pages
-            return call_octopus(config=config, url_suffix=url_suffix)
-    except ValueError as err:
-        # TODO bug https://help.octopus.com/t/504-gateway-time-out-on-getting-all-variables/24732
-        logger.error(err)
-        return {}
+            compare_overwrite(data=data, local_file=local_file)
 
-
-# get extended types like /api/users/{id}/permissions
-def get_ext_types_save(item_type=None, space_id=None, item_ids=None):
-    ext_types = ext_types_map.get(item_type)
-    logger.info(f"Get extended types {ext_types} of {item_type} in Space {space_id}")
-    for ext_type in ext_types:
-        ext_items_dict = {}
-        for item_id in item_ids:
-            address = item_type + slash_sign + item_id + slash_sign + ext_type
-            ext_item = request_octopus_item(space_id=space_id, address=address)
-            ext_items_dict[item_id] = ext_item
-        ext_file = get_local_single_item_file(item_name=all_underscore + item_type + underscore_sign + ext_type,
-                                              item_type=item_type, space_id=space_id)
-        save_file(file_path_name=ext_file, content=ext_items_dict)
-
-
-# then save the all items into a local file (warning for overwrite)
-def get_one_type_save(item_type=None, space_id=None, overwrite=False):
-    if not item_type:
-        raise ValueError("item_type must not be empty")
-    log_info_print(local_logger=logger, msg=f"downloading {item_type} in space {space_id}...")
-    all_items = get_one_type_ignore_error(item_type=item_type, space_id=space_id)
-    compare_overwrite_multiple_items(items=all_items, item_type=item_type, space_id=space_id, overwrite=overwrite)
-    if item_type == item_type_users:
-        list_items = get_list_items_from_all_items(all_items=all_items)
-        item_ids = [item.get(id_key) for item in list_items]
-        get_ext_types_save(item_type=item_type_users, space_id=space_id, item_ids=item_ids)
-    return all_items
-
-
-def delete_types(item_types_comma_delimited=None, space_id=None):
-    # always delete the parent types before deleting dependency types, otherwise deleting parent will fail
-    if item_types_comma_delimited:
-        selected_types = item_types_comma_delimited.split(comma_sign)
-        list_item_types = []
-        for item_type in reversed(inside_space_clone_types):
-            if item_type in selected_types:
-                list_item_types.append(item_type)
-        logger.info(f"deleting reordered specified types {list_item_types}")
-    else:
-        list_item_types = list(reversed(inside_space_clone_types))
-        logger.info(f"no item types specified, so deleting all cloneable types {list_item_types} in reverse order")
-    if not config.overwrite:
-        if input(f"Are you sure to delete item types {list_item_types} in {space_id}? [Y/n]: ") == 'Y':
-            config.overwrite = True
+    # local child item file based on parent item
+    def get_local_child_file(self, parent_name, child_type):
+        parent_name = parent_name.replace(slash_sign, underscore_sign)
+        child_type = child_type.replace(slash_sign, underscore_sign)
+        if self.config.space_id:
+            return os.path.join(self.config.current_path, self.config.octopus_name, self.config.space_id, child_type,
+                                parent_name + underscore_sign + child_type + yaml_ext)
         else:
-            return
-    log_info_print(local_logger=logger, msg=f"deleting item types {list_item_types} in space {space_id}...")
-    for item_type in list_item_types:
-        delete_one_type(item_type=item_type, space_id=space_id)
+            return os.path.join(self.config.current_path, self.config.octopus_name, folder_outer_spaces, child_type,
+                                parent_name + underscore_sign + child_type + yaml_ext)
 
-
-# delete all items for an item_type by call Octopus API /api/{space_id}/item_type
-# then save the all items into a local file (warning for overwrite)
-def delete_one_type(item_type=None, space_id=None):
-    if not item_type:
-        raise ValueError("item_type must not be empty")
-    log_info_print(local_logger=logger, msg=f"deleting all {item_type} in space {space_id}...")
-    if not config.overwrite:
-        if input(f"Delete all items of {item_type} in {space_id} [Y/n]? ") == 'Y':
-            config.overwrite = True
-        elif input(f"Delete NONE items of {item_type} in {space_id} [Y/n]? ") == 'Y':
-            return
-    all_items = get_one_type_ignore_error(item_type=item_type, space_id=space_id)
-    if item_type in item_types_without_single_item:
-        log_info_print(local_logger=logger, msg=f"{item_type} has no sub-single-item, skip")
-        return
-    list_items = get_list_items_from_all_items(all_items=all_items)
-    if list_items:
-        for item in list_items:
-            log_info_print(local_logger=logger,
-                           msg=f"try to delete {item_type} '{item.get(name_key)}' {item.get(id_key)} in {space_id}...")
-            delete_single_item_by_name_or_id(item_type=item_type, item_id=item.get(id_key), space_id=space_id)
-    else:
-        log_info_print(local_logger=logger, msg=f"{item_type} does not include single item to delete, skip")
-
-
-# get all items for all item_type(s) by call Octopus API /api/{space_id}/item_type with 'get' operation
-# item_types can be None, "", or "projects,tenants" etc
-def get_types_save(item_types_comma_delimited=None, space_id=None):
-    if item_types_comma_delimited:
-        list_item_types = item_types_comma_delimited.split(comma_sign)
-    else:
-        if space_id:
-            list_item_types = inside_space_download_types
+    # get the local single item file from self.config.current_path, space_id, item type, file_name;
+    # for spaces files, no space_id needed
+    def get_local_single_item_file(self, item_name, item_type):
+        item_type = item_type.replace(slash_sign, underscore_sign)
+        item_name = item_name.replace(slash_sign, underscore_sign)
+        if self.config.space_id:
+            return os.path.join(self.config.current_path, self.config.octopus_name, self.config.space_id, item_type,
+                                item_name + yaml_ext)
         else:
-            list_item_types = inside_space_download_types + outer_space_download_types
-    if config.overwrite:
-        logger.info(f"===== You are downloading {list_item_types} from space {space_id}... ===== ")
-    else:
-        config.overwrite = \
-            input(f"***** You are downloading {list_item_types} from space {space_id}; "
-                  f"Some entities may already be downloaded locally; "
-                  f"Do you want to overwrite all local existing entities? "
-                  f"If no, you will be asked to overwrite or not for each type respectively. [Y/n]: ") == 'Y'
-    for item_type in list_item_types:
-        get_one_type_save(item_type=item_type, space_id=space_id)
+            return os.path.join(self.config.current_path, self.config.octopus_name, folder_outer_spaces, item_type,
+                                item_name + yaml_ext)
 
+    # get the local all items file from self.config.current_path, space_id, item type;
+    # for spaces files, no space_id needed
+    def get_local_all_items_file(self, item_type):
+        item_type_name = item_type.replace(slash_sign, underscore_sign)
+        if self.config.space_id:
+            return os.path.join(self.config.current_path, self.config.octopus_name, self.config.space_id,
+                                item_type_name, all_underscore + item_type_name + yaml_ext)
+        else:
+            return os.path.join(self.config.current_path, self.config.octopus_name, folder_outer_spaces, item_type_name,
+                                all_underscore + item_type_name + yaml_ext)
 
-def get_spaces_save(item_types_comma_delimited=None, space_id_or_name_comma_delimited=None):
-    if space_id_or_name_comma_delimited:
-        list_space_ids_or_names = space_id_or_name_comma_delimited.split(comma_sign)
-        list_space_ids = [verify_space(space_id_name=space_id_or_name) for space_id_or_name in
-                          list_space_ids_or_names]
-    else:
-        list_space_ids = get_list_ids_one_type(item_type=item_type_spaces) + [None]
-    list_space_ids_set = set(list_space_ids)
-    if config.overwrite:
-        logger.info(f"===== You are downloading spaces {list_space_ids_set}... =====")
-    else:
-        config.overwrite = \
-            input(f"===== You are downloading spaces {list_space_ids_set}; "
-                  f"Some entities may already be downloaded locally; "
-                  f"Do you want to overwrite all local existing entities? "
-                  f"If no, you will be asked to overwrite or not for each type respectively. [Y/n]: ") == 'Y'
-    for space_id in list_space_ids_set:
-        get_types_save(item_types_comma_delimited=item_types_comma_delimited, space_id=space_id)
+    # get local item file smartly; three possibilities
+    # use 'Name'
+    # use 'Id' if 'Name' not available
+    # use item_type if neither 'Id' nor 'Name' available
+    def get_local_single_item_file_from_item(self, item, item_type):
+        if not item or not item_type:
+            raise ValueError("item and item_type must not be empty!")
+        if item.get(name_key) and item_type not in item_types_with_duplicate_names:
+            local_item_file = self.get_local_single_item_file(item_name=item[name_key], item_type=item_type)
+        elif item.get(id_key):
+            local_item_file = self.get_local_single_item_file(item_name=item[id_key], item_type=item_type)
+        else:
+            local_item_file = self.get_local_single_item_file(item_name=item_type, item_type=item_type)
+        return local_item_file
 
+    # check if the local item file is the same as the remote item on Octopus server;
+    # the remote item will be retrieved on the fly
+    def is_local_same_as_remote(self, item_type, item_name=None, item_id=None):
+        if not item_type or not item_name and not item_id:
+            raise ValueError("item_type and item_name/item_id must not be empty")
+        if item_name:
+            remote_item = self.get_single_item_by_name(item_type=item_type, item_name=item_name)
+            local_item_file = self.get_local_single_item_file(item_name=item_name, item_type=item_type)
+        else:
+            remote_item = self.get_or_delete_single_item_by_id(item_type=item_type, item_id=item_id)
+            local_item_file = self.get_local_single_item_file(item_name=item_id, item_type=item_type)
+        is_same, local_item = is_local_same_as_remote2(remote_item=remote_item, local_item_file=local_item_file)
+        return is_same, local_item, remote_item
 
-# get a single item from Octopus server
-# 1. get all items for an item_type by call Octopus API /api/{space_id}/item_type with 'get' operation
-# 2. find the matching item for the item_name
-def get_single_item_by_name(item_type=None, item_name=None, space_id=None):
-    if not item_type or not item_name:
-        raise ValueError("item_type and item_name must not be empty")
-    logger.info(f"Getting {item_type} {item_name} from {space_id} "
-                f"by getting all items first and then find the matched item by name")
-    all_items = get_one_type_ignore_error(item_type=item_type, space_id=space_id)
-    return find_single_item_from_list_by_name(list_items=all_items.get(items_key, []), item_name=item_name)
+    # compare in memory all items with the local all items and overwrite if user wants
+    def compare_overwrite_multiple_items(self, items, item_type, overwrite=False):
+        if not item_type:
+            raise ValueError('item_type must not be empty')
+        local_all_items_file = self.get_local_all_items_file(item_type=item_type)
+        self.logger.info('compare and write: ' + local_all_items_file)
+        self.always_overwrite_or_compare_overwrite(local_file=local_all_items_file, data=items, overwrite=overwrite)
 
-
-# find a single item by name from a list of items
-def find_single_item_from_list_by_name(list_items=None, item_name=None):
-    logger.info(f"Find {item_name} from list of items...")
-    if not list_items:
-        logger.info(f"The list is empty, so return")
-        return {}
-    item = find_item(list_items, name_key, item_name)
-    if not item:
-        logger.info(f"{item_name} does not exist")
-        return {}
-    if item.get(id_key):
-        logger.info(f"{id_key} for {item_name} is " + item.get(id_key))
-    else:
-        logger.info(f"{item_name} has no {id_key}; the item is: ")
-        logger.warning(pformat(item))
-    return item
-
-
-def save_single_item(item_type=None, item=None, space_id=None):
-    if not item_type or not item:
-        raise ValueError("item_type and item must not be empty")
-    local_item_file = get_local_single_item_file_from_item(item=item, item_type=item_type, space_id=space_id)
-    # always_overwrite_or_compare_overwrite(local_file=local_item_file, data=item)
-    save_file(file_path_name=local_item_file, content=item)
-    logger.info(f'A local file {local_item_file} was saved or overwritten with the data')
-    return item
-
-
-# get tenant variables
-def get_tenant_variables(tenant_id=None, space_id=None):
-    address = item_type_tenants + slash_sign + tenant_id + slash_sign + item_type_variables
-    return request_octopus_item(space_id=space_id, address=address)
-
-
-# get tenant variables and save to a file
-def get_tenant_variables_save(tenant_id=None, space_id=None):
-    logger.info(f"getting and saving {item_type_tenant_variables} for tenant {tenant_id} in space {space_id}...")
-    tenant_variables = get_tenant_variables(tenant_id=tenant_id, space_id=space_id)
-    dst_file = get_local_single_item_file(item_name=tenant_id + underscore_sign + item_type_variables,
-                                          item_type=item_type_tenant_variables, space_id=space_id)
-    save_file(file_path_name=dst_file, content=tenant_variables)
-    return tenant_variables
-
-
-def put_post_tenant_variables(tenant_id=None, space_id=None, tenant_variables=None):
-    logger.info(f"put or post tenant variables for an existing tenant {tenant_id} in {space_id}")
-    address = item_type_tenants + slash_sign + tenant_id + slash_sign + item_type_variables
-    remote_tenant_variables = request_octopus_item(space_id=space_id, address=address)
-    if remote_tenant_variables:
-        logger.info(f"the tenant variables exist in {tenant_id} in {space_id}, so overwrite")
-        logger.info(f"tenant {tenant_id} has existing variables, so put the variables")
-        remote_tenant_variables = request_octopus_item(payload=tenant_variables, space_id=space_id, address=address,
-                                                       action=operation_put)
-    else:
-        # TODO add a log to see if any "POST" exist, it may be an Octopus bug
-        logger.warning(f"tenant {tenant_id} has no variables, so post the variables")
-        remote_tenant_variables = request_octopus_item(payload=tenant_variables, space_id=space_id, address=address,
-                                                       action=operation_post)
-    return remote_tenant_variables
-
-
-# put/post tenant variables and save to local file
-def put_post_tenant_variables_save(tenant_id=None, space_id=None, tenant_variables=None):
-    logger.info(f"put or post tenant variables for an existing tenant {tenant_id} in {space_id} and save to a file")
-    remote_tenant_variables = put_post_tenant_variables(tenant_id=tenant_id, space_id=space_id,
-                                                        tenant_variables=tenant_variables)
-    tenant_variables_file = get_local_single_item_file(item_name=tenant_id + underscore_sign + item_type_variables,
-                                                       item_type=item_type_tenant_variables, space_id=space_id)
-    save_file(file_path_name=tenant_variables_file, content=remote_tenant_variables)
-    return remote_tenant_variables
-
-
-def get_single_item_by_name_or_id(item_type=None, item_name=None, item_id=None, space_id=None):
-    if not item_type or not item_name and not item_id:
-        raise ValueError("item_type and item_name/item_id must not be empty")
-    if item_name:
-        return get_single_item_by_name(item_type=item_type, item_name=item_name, space_id=space_id)
-    elif item_id:
-        return get_or_delete_single_item_by_id(item_type=item_type, item_id=item_id, space_id=space_id)
-    else:
-        raise ValueError("Either item_name or item_id must be present")
-
-
-# get a single item from Octopus server
-# if item_name
-# 1. get all items for an item_type by call Octopus API /api/{space_id}/item_type with 'get' operation
-# 2. find the matching item for the item_name
-# 3. save the single item into a local file (warning for overwrite)
-# if item_id
-# get a single item from Octopus server for the item which cannot be searched by the item_name (like deployment process)
-# by directly calling the Octopus API /api/{space_id}/item_type/{id} with 'get'
-# since there is no 'Name' in some of the json response, we have to use 'Id' as the file name to save it
-def get_single_item_by_name_or_id_save(item_type=None, item_name=None, item_id=None, space_id=None):
-    item_badge = item_name if item_name else item_id
-    log_info_print(local_logger=logger,
-                   msg=f"getting {item_type} {item_badge} in space {space_id} and saving to local file...")
-    item = get_single_item_by_name_or_id(item_type=item_type, item_name=item_name, item_id=item_id, space_id=space_id)
-    save_single_item(item_type=item_type, item=item, space_id=space_id)
-    # process child items
-    if item_type == item_type_projects:
-        logger.info(f"the item type is {item_type_projects}, so also get its deployment_process and variables")
-        get_single_item_by_name_or_id_save(item_type=item_type_deployment_processes,
-                                           item_id=item.get(deployment_process_id_key), space_id=space_id)
-        get_single_item_by_name_or_id_save(item_type=item_type_variables, item_id=item.get(variable_set_id_key),
-                                           space_id=space_id)
-    elif item_type == item_type_library_variable_sets:
-        logger.info(f"the item type is {item_type_library_variable_sets}, so also get variables")
-        get_single_item_by_name_or_id_save(item_type=item_type_variables, item_id=item.get(variable_set_id_key),
-                                           space_id=space_id)
-    elif item_type == item_type_tenants:
-        logger.info(f"the item type is {item_type_tenants}, so also get its variables")
-        get_tenant_variables_save(tenant_id=item.get(id_key), space_id=space_id)
-    return item
-
-
-# a single item from Octopus server for the item which cannot be searched by the item_name (like deployment process)
-# by directly calling the Octopus API /api/{space_id}/item_type/{id}
-def get_or_delete_single_item_by_id(item_type=None, item_id=None, action=operation_get, space_id=None):
-    logger.info(f"{action} {item_type} {item_id} in {space_id}...")
-    if not item_type or not item_id:
-        raise ValueError("item_type and item_id must not be empty")
-    space_url = space_id + slash_sign if space_id else ""
-    url_suffix = space_url + item_type + slash_sign + item_id
-    return call_octopus(operation=action, config=config, url_suffix=url_suffix)
-
-
-def get_list_items_from_all_items(all_items=None):
-    logger.info(f"getting the list of items from the payload")
-    # the case where the payload has a metadata and a list
-    if isinstance(all_items, dict) and isinstance(all_items.get(items_key), list):
-        logger.info(f"the payload is a dict, so get the list of items first by {items_key}")
-        return all_items.get(items_key)
-    elif isinstance(all_items, list):
-        logger.info("the payload is a list")
-        return all_items
-    return []
-
-
-# post a single item by call Octopus API /api/{space_id}/item_type with 'post'
-def post_single_item(item_type=None, payload=None, space_id=None):
-    if not item_type or not payload:
-        raise ValueError("item_type and playload must not be empty")
-    space_url = space_id + slash_sign if space_id else ""
-    url_suffix = space_url + item_type
-    item = call_octopus(operation=operation_post, payload=payload, config=config, url_suffix=url_suffix)
-    pop_last_modified(item)
-    return item
-
-
-# post a single item by call Octopus API /api/{space_id}/item_type with 'post' operation
-# then save the item locally
-def post_single_item_save(item_type=None, payload=None, space_id=None):
-    item_badge = payload.get(name_key) if payload.get(name_key) else payload.get(id_key)
-    logger.info(f"posting a new {item_type} {item_badge} in space {space_id} and saving it to a local file")
-    item = post_single_item(item_type=item_type, payload=payload, space_id=space_id)
-    if not item.get(name_key) and payload.get(name_key):
-        logger.warning(f"the new item has no name, so the input item name {payload.get(name_key)} is used")
-        item[name_key] = payload.get(name_key)
-    local_item_file = get_local_single_item_file_from_item(item=item, item_type=item_type, space_id=space_id)
-    always_overwrite_or_compare_overwrite(local_file=local_item_file, data=item, overwrite=True)
-    return item
-
-
-# put a single item by call Octopus API /api/{space_id}/item_type/{id} with 'put' operation
-def put_single_item(item_type=None, payload=None, space_id=None):
-    if not item_type or not payload:
-        raise ValueError("item_type and playload must not be empty")
-    logger.info(f"put a single {item_type} {payload.get(id_key)} to space {space_id}")
-    space_url = space_id + slash_sign if space_id else ""
-    # some type has no id like http://server/api/Spaces-1/dashboardconfiguration
-    url_suffix = space_url + item_type + (slash_sign + payload.get(id_key) if payload.get(id_key) else "")
-    item = call_octopus(operation=operation_put, payload=payload, config=config, url_suffix=url_suffix)
-    pop_last_modified(item)
-    logger.info(f"{item_type} {id_key} is " + item[id_key])
-    return item
-
-
-# put a single item by call Octopus API /api/{space_id}/item_type/{id} with 'put' operation
-# then save the item locally
-def put_single_item_save(item_type=None, payload=None, space_id=None, overwrite=False):
-    item_info = payload.get(name_key) if payload.get(name_key) else payload.get(id_key)
-    logger.info(f"updating {item_type} {item_info} in {space_id} and saving to a local file...")
-    if config.overwrite or overwrite \
-            or input(f"Are you sure you want to update {item_type} {item_info} in {space_id} [Y/n]: ") == 'Y':
-        item = put_single_item(item_type=item_type, payload=payload, space_id=space_id)
-        local_item_file = get_local_single_item_file_from_item(item=item, item_type=item_type, space_id=space_id)
-        save_file(file_path_name=local_item_file, content=item)
-        return item
-    return payload
-
-
-# put a child-item by call Octopus API /api/{space_id}/child_type/{id} with 'put' operation
-# then save the item locally
-def put_child_item_save(parent_name=None, child_type=None, payload=None, space_id=None):
-    logger.info(f"put child {child_type} {payload.get(id_key)} of parent {parent_name} in space {space_id}")
-    child_item = put_single_item(item_type=child_type, payload=payload, space_id=space_id)
-    local_child_file = get_local_child_file(parent_name=parent_name, child_type=child_type, space_id=space_id)
-    save_file(file_path_name=local_child_file, content=child_item)
-    return child_item
-
-
-# update an item on Octopus server
-# 1. check if the local item file is the same as the remote item on Octopus server
-# 2. if same, exit, otherwise continue to ask if user wants to update the item on Octopus server using the local item
-# 3. if user input 'Y', update the item on Octopus and save the remote item locally
-def update_single_item_save(item_type=None, item_name=None, item_id=None, space_id=None):
-    if not item_type or not item_name and not item_id:
-        raise ValueError("item_type and item_name/item_id must not be empty")
-    log_info_print(local_logger=logger, msg=f"updating {item_type} {item_name if item_name else item_id} in space "
-                                            f"{space_id} from local file")
-    is_same, local_item, remote_item = \
-        is_local_same_as_remote(item_type=item_type, item_name=item_name, item_id=item_id, space_id=space_id)
-    if is_same:
-        log_info_print(local_logger=logger, msg=remote_local_same_msg)
-        return local_item
-    return put_single_item_save(item_type=item_type, payload=local_item, space_id=space_id)
-
-
-def delete_file(file_name=None):
-    logger.info(f"Removing {file_name}")
-    try:
-        os.remove(file_name)
-    except OSError:
-        logger.info(f"{file_name} does not exit")
-        pass
-
-
-# delete unused sub items if the item cannot be deleted due to some sub items are being used
-def delete_sub_items(item_type=None, item_name=None, item_id=None, space_id=None):
-    item_badge = item_name if item_name else item_id
-    sub_item_tuple = item_type_sub_item_map.get(item_type)
-    if not sub_item_tuple:
-        logger.warning(f"{item_type} {item_badge} does not have sub items for deleting; exit")
-        return
-    item = get_single_item_by_name_or_id(item_type=item_type, item_name=item_name, item_id=item_id, space_id=space_id)
-    if not item:
-        logger.warning(f"{item_type} {item_badge} does not exist in {space_id}; exit")
-        return
-    sub_items_key = sub_item_tuple[0]
-    sub_item_name_key = sub_item_tuple[1]
-    log_info_print(local_logger=logger,
-                   msg=f"deleting the unused sub items {sub_items_key} of {item_type} {item_badge} in {space_id}...")
-    index = 0
-    while index < len(item.get(sub_items_key)):
-        item_copy = copy.deepcopy(item)
-        sub_item = item_copy.get(sub_items_key).pop(index)
+    # get all items for an item_type by call Octopus API /api/{space_id}/item_type with 'get' operation
+    # {space_id} is optional
+    def get_one_type_ignore_error(self, item_type):
+        if not item_type:
+            raise ValueError("item_type must not be empty")
+        self.logger.info(f"getting all items of {item_type} in space {self.config.space_id}")
+        space_url = self.config.space_id + slash_sign if self.config.space_id else ""
         try:
-            item = put_single_item(item_type=item_type, payload=item_copy, space_id=space_id)
-            log_info_print(local_logger=logger,
-                           msg=f"sub item with {sub_item_name_key}: {sub_item.get(sub_item_name_key)} was deleted")
+            if item_type == item_type_home:
+                self.logger.info(f"getting space {self.config.space_id} home page")
+                return call_octopus(config=self.config, url_suffix=space_url)
+            if item_type in inside_space_only_all_types:
+                self.logger.info(f"{item_type} can only be downloaded by {slash_all}")
+                url_suffix = space_url + item_type + slash_all
+                return call_octopus(config=self.config, url_suffix=url_suffix)
+            else:
+                url_suffix = space_url + item_type + url_all_pages
+                return call_octopus(config=self.config, url_suffix=url_suffix)
         except ValueError as err:
-            logger.warning(err)
-            log_info_print(local_logger=logger, msg=f"sub item with {sub_item_name_key}: "
-                                                    f"{sub_item.get(sub_item_name_key)} cannot be deleted; skip it")
-            index += 1
-    logger.info(f"----- completed deleting sub items -----")
+            # TODO bug https://help.octopus.com/t/504-gateway-time-out-on-getting-all-variables/24732
+            self.logger.error(err)
+            return {}
 
+    # get extended types like /api/users/{id}/permissions
+    def get_ext_types_save(self, item_type, item_ids):
+        ext_types = ext_types_map.get(item_type)
+        self.logger.info(f"Get extended types {ext_types} of {item_type} in Space {self.config.space_id}")
+        for ext_type in ext_types:
+            ext_items_dict = {}
+            for item_id in item_ids:
+                address = item_type + slash_sign + item_id + slash_sign + ext_type
+                ext_item = self.request_octopus_item(address=address)
+                ext_items_dict[item_id] = ext_item
+            ext_file = \
+                self.get_local_single_item_file(item_name=all_underscore + item_type + underscore_sign + ext_type,
+                                                item_type=item_type)
+            save_file(file_path_name=ext_file, content=ext_items_dict)
 
-# delete a single item
-def delete_single_item_by_name_or_id(item_type=None, item_name=None, item_id=None, space_id=None):
-    if not item_type or not item_name and not item_id:
-        raise ValueError("item_type and item_name/item_id must not be empty")
-    item_info = item_name if item_name else item_id
-    item = get_single_item_by_name_or_id(item_type=item_type, item_name=item_name, item_id=item_id, space_id=space_id)
-    if not item:
-        logger.warning(f"{item_type} {item_info} does not exist in {space_id}; exit")
-        return
-    if not config.overwrite and input(f"Are you sure to delete {item_type} {item_info} in {space_id} [Y/n]: ") != 'Y':
-        return
-    log_info_print(local_logger=logger, msg=f"deleting {item_type} {item_info} in {space_id}...")
-    try:
-        get_or_delete_single_item_by_id(item_type=item_type, item_id=item.get(id_key), action=operation_delete,
-                                        space_id=space_id)
-    except ValueError as err:
-        logger.warning(err)
-        log_info_print(local_logger=logger, msg=f"{item_type} {item_info} cannot be deleted and try to delete unused "
-                                                f"sub items in {space_id}...")
-        delete_sub_items(item_type=item_type, item_id=item.get(id_key), space_id=space_id)
+    # then save the all items into a local file (warning for overwrite)
+    def get_one_type_save(self, item_type, overwrite=False):
+        if not item_type:
+            raise ValueError("item_type must not be empty")
+        self.log_info_print(msg=f"downloading {item_type} in space {self.config.space_id}...")
+        all_items = self.get_one_type_ignore_error(item_type=item_type)
+        self.compare_overwrite_multiple_items(items=all_items, item_type=item_type, overwrite=overwrite)
+        if item_type == item_type_users:
+            list_items = self.get_list_items_from_all_items(all_items=all_items)
+            item_ids = [item.get(id_key) for item in list_items]
+            self.get_ext_types_save(item_type=item_type_users, item_ids=item_ids)
+        return all_items
 
+    def delete_types(self, item_types_comma_delimited=None):
+        # always delete the parent types before deleting dependency types, otherwise deleting parent will fail
+        if item_types_comma_delimited:
+            selected_types = item_types_comma_delimited.split(comma_sign)
+            list_item_types = []
+            for item_type in reversed(inside_space_clone_types):
+                if item_type in selected_types:
+                    list_item_types.append(item_type)
+            self.logger.info(f"deleting reordered specified types {list_item_types}")
+        else:
+            list_item_types = list(reversed(inside_space_clone_types))
+            self.logger.info(
+                f"no item types specified, so deleting all cloneable types {list_item_types} in reverse order")
+        if not self.config.overwrite:
+            if input(f"Are you sure to delete item types {list_item_types} in {self.config.space_id}? [Y/n]: ") == 'Y':
+                self.config.overwrite = True
+            else:
+                return
+        self.log_info_print(msg=f"deleting item types {list_item_types} in space {self.config.space_id}...")
+        for item_type in list_item_types:
+            self.delete_one_type(item_type=item_type)
 
-# create a new single item from a local file
-def create_single_item_from_local_file(item_type=None, item_name=None, local_item_name=None, space_id=None):
-    if not item_type or not local_item_name:
-        raise ValueError('item_type and local_item_name must not be empty')
-    log_info_print(local_logger=logger,
-                   msg=f"creating a new {item_type} {item_name} in space {space_id} from a local file named "
-                       f"{local_item_name}")
-    # load local item file
-    local_item_file = get_local_single_item_file(item_name=local_item_name, item_type=item_type, space_id=space_id)
-    local_item = load_file(local_item_file)
-    # rename item if needed
-    if item_name:
-        logger.info(f"Rename local item to {item_name}")
-        local_item[name_key] = item_name
-    remote = post_single_item_save(item_type=item_type, payload=local_item, space_id=space_id)
-    return remote
+    # delete all items for an item_type by call Octopus API /api/{space_id}/item_type
+    # then save the all items into a local file (warning for overwrite)
+    def delete_one_type(self, item_type):
+        if not item_type:
+            raise ValueError("item_type must not be empty")
+        self.log_info_print(msg=f"deleting all {item_type} in space {self.config.space_id}...")
+        if not self.config.overwrite:
+            if input(f"Delete all items of {item_type} in {self.config.space_id} [Y/n]? ") == 'Y':
+                self.config.overwrite = True
+            elif input(f"Delete NONE items of {item_type} in {self.config.space_id} [Y/n]? ") == 'Y':
+                return
+        all_items = self.get_one_type_ignore_error(item_type=item_type)
+        if item_type in item_types_without_single_item:
+            self.log_info_print(msg=f"{item_type} has no sub-single-item, skip")
+            return
+        list_items = self.get_list_items_from_all_items(all_items=all_items)
+        if list_items:
+            for item in list_items:
+                self.log_info_print(msg=f"try to delete {item_type} '{item.get(name_key)}' {item.get(id_key)} in "
+                                        f"{self.config.space_id}...")
+                self.delete_single_item_by_name_or_id(item_type=item_type, item_id=item.get(id_key))
+        else:
+            self.log_info_print(msg=f"{item_type} does not include single item to delete, skip")
 
+    # get all items for all item_type(s) by call Octopus API /api/{space_id}/item_type with 'get' operation
+    # item_types can be None, "", or "projects,tenants" etc
+    def get_types_save(self, item_types_comma_delimited=None):
+        if item_types_comma_delimited:
+            list_item_types = item_types_comma_delimited.split(comma_sign)
+        else:
+            if self.config.space_id:
+                list_item_types = inside_space_download_types
+            else:
+                list_item_types = inside_space_download_types + outer_space_download_types
+        if self.config.overwrite:
+            self.logger.info(f"===== You are downloading {list_item_types} from space {self.config.space_id}... ===== ")
+        else:
+            self.config.overwrite = \
+                input(f"***** You are downloading {list_item_types} from space {self.config.space_id}; "
+                      f"Some entities may already be downloaded locally; "
+                      f"Do you want to overwrite all local existing entities? "
+                      f"If no, you will be asked to overwrite or not for each type respectively. [Y/n]: ") == 'Y'
+        for item_type in list_item_types:
+            self.get_one_type_save(item_type=item_type)
 
-# create a new single item from an item on Octopus server
-def clone_single_item_from_remote_item(item_type=None, item_name=None, base_item_name=None, space_id=None):
-    if not item_type or not item_name or not base_item_name:
-        raise ValueError('item_type and item_name and base_item_name must not be empty')
-    # read the remote base item
-    log_info_print(local_logger=logger,
-                   msg=f"cloning {item_type} {item_name} in space {space_id} based on remote item {base_item_name}")
-    base_item = get_single_item_by_name(item_type=item_type, item_name=base_item_name, space_id=space_id)
-    if item_type == item_type_projects:
-        prepare_project_versioning_strategy(project=base_item)
-    # create a new item from the remote item
-    base_item[name_key] = item_name
-    item = post_single_item_save(item_type=item_type, payload=base_item, space_id=space_id)
-    return item
+    def get_spaces_save(self, space_id_or_name_comma_delimited=None, item_types_comma_delimited=None):
+        if space_id_or_name_comma_delimited:
+            list_space_ids_or_names = space_id_or_name_comma_delimited.split(comma_sign)
+            list_space_ids = [self.verify_space(space_id_name=space_id_or_name) for space_id_or_name in
+                              list_space_ids_or_names]
+        else:
+            list_space_ids = self.get_list_ids_one_type(item_type=item_type_spaces) + [None]
+        list_space_ids_set = set(list_space_ids)
+        if self.config.overwrite:
+            self.logger.info(f"===== You are downloading spaces {list_space_ids_set}... =====")
+        else:
+            self.config.overwrite = \
+                input(f"===== You are downloading spaces {list_space_ids_set}; "
+                      f"Some entities may already be downloaded locally; "
+                      f"Do you want to overwrite all local existing entities? "
+                      f"If no, you will be asked to overwrite or not for each type respectively. [Y/n]: ") == 'Y'
+        for space_id in list_space_ids_set:
+            self.config.space_id = space_id
+            self.get_types_save(item_types_comma_delimited=item_types_comma_delimited)
 
+    # get a single item from Octopus server
+    # 1. get all items for an item_type by call Octopus API /api/{space_id}/item_type with 'get' operation
+    # 2. find the matching item for the item_name
+    def get_single_item_by_name(self, item_type, item_name):
+        if not item_type or not item_name:
+            raise ValueError("item_type and item_name must not be empty")
+        self.logger.info(f"Getting {item_type} {item_name} from {self.config.space_id} "
+                         f"by getting all items first and then find the matched item by name")
+        all_items = self.get_one_type_ignore_error(item_type=item_type)
+        return self.find_single_item_from_list_by_name(list_items=all_items.get(items_key, []), item_name=item_name)
 
-# get a single child-item of a parent item; the child-item has no 'Name' field, e.g. deployment processes of projects
-def get_child_item(parent_name=None, parent_type=None, child_id_key=None, child_type=None, space_id=None):
-    logger.info(f"getting child {child_type} of parent {parent_type} {parent_name} by {child_id_key} in {space_id}")
-    parent = get_single_item_by_name(item_type=parent_type, item_name=parent_name, space_id=space_id)
-    return get_or_delete_single_item_by_id(item_type=child_type, item_id=parent.get(child_id_key), space_id=space_id)
+    # find a single item by name from a list of items
+    def find_single_item_from_list_by_name(self, list_items=None, item_name=None):
+        self.logger.info(f"Find {item_name} from list of items...")
+        if not list_items:
+            self.logger.info(f"The list is empty, so return")
+            return {}
+        item = find_item(list_items, name_key, item_name)
+        if not item:
+            self.logger.info(f"{item_name} does not exist")
+            return {}
+        if item.get(id_key):
+            self.logger.info(f"{id_key} for {item_name} is " + item.get(id_key))
+        else:
+            self.logger.info(f"{item_name} has no {id_key}; the item is: ")
+            self.logger.warning(pformat(item))
+        return item
 
+    def save_single_item(self, item_type, item):
+        if not item_type or not item:
+            raise ValueError("item_type and item must not be empty")
+        local_item_file = self.get_local_single_item_file_from_item(item=item, item_type=item_type)
+        # always_overwrite_or_compare_overwrite(local_file=local_item_file, data=item)
+        save_file(file_path_name=local_item_file, content=item)
+        self.logger.info(f'A local file {local_item_file} was saved or overwritten with the data')
+        return item
 
-# get a single child-item of a parent item; the child-item has no 'Name' field
-# save the child-item into a local file with the file name of parent_name_child_type
-def get_child_item_save(parent_name=None, parent_type=None, child_id_key=None, child_type=None, space_id=None):
-    log_info_print(local_logger=logger, msg=f"getting child {child_type} of parent {parent_type} {parent_name} by "
-                                            f"{child_id_key} in {space_id}")
-    child_item = get_child_item(parent_name=parent_name, parent_type=parent_type, child_id_key=child_id_key,
-                                child_type=child_type, space_id=space_id)
-    local_child_file = get_local_child_file(parent_name=parent_name, child_type=child_type, space_id=space_id)
-    always_overwrite_or_compare_overwrite(local_file=local_child_file, data=child_item)
-    return child_item
+    # get tenant variables
+    def get_tenant_variables(self, tenant_id):
+        address = item_type_tenants + slash_sign + tenant_id + slash_sign + item_type_variables
+        return self.request_octopus_item(address=address)
 
+    # get tenant variables and save to a file
+    def get_tenant_variables_save(self, tenant_id):
+        self.logger.info(f"getting and saving {item_type_tenant_variables} for tenant {tenant_id} in space "
+                         f"{self.config.space_id}")
+        tenant_variables = self.get_tenant_variables(tenant_id=tenant_id)
+        dst_file = self.get_local_single_item_file(item_name=tenant_id + underscore_sign + item_type_variables,
+                                                   item_type=item_type_tenant_variables)
+        save_file(file_path_name=dst_file, content=tenant_variables)
+        return tenant_variables
 
-# update a single child-item of a parent item; the child-item has no 'Name' field
-# 1. check if the local child-item file is the same as the remote child-item on Octopus server
-# 2. if same, exit, otherwise ask if user wants to update the child-item on Octopus server using the local child-item
-# 3. if user input 'Y', update the child-item on Octopus and save the remote child-item locally, otherwise exit
-def update_child_item_from_local_save(
-        parent_name=None, parent_type=None, child_id_key=None, child_type=None, space_id=None):
-    log_info_print(local_logger=logger,
-                   msg=f"update child {child_type} of {parent_type} {parent_name} in {space_id} by {child_id_key}")
-    remote_child_item = get_child_item(parent_name=parent_name, parent_type=parent_type, child_id_key=child_id_key,
-                                       child_type=child_type, space_id=space_id)
-    local_child_file = get_local_child_file(parent_name=parent_name, child_type=child_type, space_id=space_id)
-    is_same, local_child_item = is_local_same_as_remote2(remote_item=remote_child_item,
-                                                         local_item_file=local_child_file)
-    if is_same:
-        log_info_print(local_logger=logger, msg=remote_local_same_msg)
-        return
-    if config.overwrite or input(f"Are you sure you want to update {child_type} for {parent_name} [Y/n]: ") == 'Y':
-        child_item = put_single_item(item_type=child_type, payload=local_child_item, space_id=space_id)
+    def put_post_tenant_variables(self, tenant_id, tenant_variables):
+        self.logger.info(f"put or post tenant variables for an existing tenant {tenant_id} in {self.config.space_id}")
+        address = item_type_tenants + slash_sign + tenant_id + slash_sign + item_type_variables
+        remote_tenant_variables = self.request_octopus_item(address=address)
+        if remote_tenant_variables:
+            self.logger.info(f"the tenant variables exist in {tenant_id} in {self.config.space_id}, so overwrite")
+            self.logger.info(f"tenant {tenant_id} has existing variables, so put the variables")
+            remote_tenant_variables = self.request_octopus_item(payload=tenant_variables, address=address,
+                                                                action=operation_put)
+        else:
+            # TODO add a log to see if any "POST" exist, it may be an Octopus bug
+            self.logger.warning(f"tenant {tenant_id} has no variables, so post the variables")
+            remote_tenant_variables = self.request_octopus_item(payload=tenant_variables, address=address,
+                                                                action=operation_post)
+        return remote_tenant_variables
+
+    # put/post tenant variables and save to local file
+    def put_post_tenant_variables_save(self, tenant_id, tenant_variables):
+        self.logger.info(f"put or post tenant variables for an existing tenant {tenant_id} in {self.config.space_id} "
+                         f"and save to a file")
+        remote_tenant_variables = self.put_post_tenant_variables(tenant_id=tenant_id, tenant_variables=tenant_variables)
+        tenant_variables_file = \
+            self.get_local_single_item_file(item_name=tenant_id + underscore_sign + item_type_variables,
+                                            item_type=item_type_tenant_variables)
+        save_file(file_path_name=tenant_variables_file, content=remote_tenant_variables)
+        return remote_tenant_variables
+
+    def get_single_item_by_name_or_id(self, item_type, item_name=None, item_id=None):
+        if not item_type or not item_name and not item_id:
+            raise ValueError("item_type and item_name/item_id must not be empty")
+        if item_name:
+            return self.get_single_item_by_name(item_type=item_type, item_name=item_name)
+        elif item_id:
+            return self.get_or_delete_single_item_by_id(item_type=item_type, item_id=item_id)
+        else:
+            raise ValueError("Either item_name or item_id must be present")
+
+    # get a single item from Octopus server
+    # if item_name
+    # 1. get all items for an item_type by call Octopus API /api/{space_id}/item_type with 'get' operation
+    # 2. find the matching item for the item_name
+    # 3. save the single item into a local file (warning for overwrite)
+    # if item_id,
+    # get a single item from Octopus server for the item which cannot be searched by the item_name
+    # (like deployment process)
+    # by directly calling the Octopus API /api/{space_id}/item_type/{id} with 'get'
+    # since there is no 'Name' in some of the json response, we have to use 'Id' as the file name to save it
+    def get_single_item_by_name_or_id_save(self, item_type, item_name=None, item_id=None):
+        item_badge = item_name if item_name else item_id
+        self.log_info_print(msg=f"getting {item_type} {item_badge} in space {self.config.space_id} and saving file...")
+        item = self.get_single_item_by_name_or_id(item_type=item_type, item_name=item_name, item_id=item_id)
+        self.save_single_item(item_type=item_type, item=item)
+        # process child items
+        if item_type == item_type_projects:
+            self.logger.info(f"the item type is {item_type_projects}, so also get its deployment_process and variables")
+            self.get_single_item_by_name_or_id_save(item_type=item_type_deployment_processes,
+                                                    item_id=item.get(deployment_process_id_key))
+            self.get_single_item_by_name_or_id_save(item_type=item_type_variables,
+                                                    item_id=item.get(variable_set_id_key))
+        elif item_type == item_type_library_variable_sets:
+            self.logger.info(f"the item type is {item_type_library_variable_sets}, so also get variables")
+            self.get_single_item_by_name_or_id_save(item_type=item_type_variables,
+                                                    item_id=item.get(variable_set_id_key))
+        elif item_type == item_type_tenants:
+            self.logger.info(f"the item type is {item_type_tenants}, so also get its variables")
+            self.get_tenant_variables_save(tenant_id=item.get(id_key))
+        return item
+
+    # a single item from Octopus server for the item which cannot be searched by the item_name (like deployment process)
+    # by directly calling the Octopus API /api/{space_id}/item_type/{id}
+    def get_or_delete_single_item_by_id(self, item_type, item_id, action=operation_get):
+        self.logger.info(f"{action} {item_type} {item_id} in {self.config.space_id}...")
+        if not item_type or not item_id:
+            raise ValueError("item_type and item_id must not be empty")
+        space_url = self.config.space_id + slash_sign if self.config.space_id else ""
+        url_suffix = space_url + item_type + slash_sign + item_id
+        return call_octopus(operation=action, config=self.config, url_suffix=url_suffix)
+
+    def get_list_items_from_all_items(self, all_items):
+        self.logger.info(f"getting the list of items from the payload")
+        # the case where the payload has a metadata and a list
+        if isinstance(all_items, dict) and isinstance(all_items.get(items_key), list):
+            self.logger.info(f"the payload is a dict, so get the list of items first by {items_key}")
+            return all_items.get(items_key)
+        elif isinstance(all_items, list):
+            self.logger.info("the payload is a list")
+            return all_items
+        return []
+
+    # post a single item by call Octopus API /api/{space_id}/item_type with 'post'
+    def post_single_item(self, item_type, payload):
+        if not item_type or not payload:
+            raise ValueError("item_type and playload must not be empty")
+        space_url = self.config.space_id + slash_sign if self.config.space_id else ""
+        url_suffix = space_url + item_type
+        item = call_octopus(operation=operation_post, payload=payload, config=self.config, url_suffix=url_suffix)
+        Common.pop_last_modified(item)
+        return item
+
+    # post a single item by call Octopus API /api/{space_id}/item_type with 'post' operation
+    # then save the item locally
+    def post_single_item_save(self, item_type, payload):
+        item_badge = payload.get(name_key) if payload.get(name_key) else payload.get(id_key)
+        self.logger.info(f"posting a new {item_type} {item_badge} in space {self.config.space_id} and saving file")
+        item = self.post_single_item(item_type=item_type, payload=payload)
+        if not item.get(name_key) and payload.get(name_key):
+            self.logger.warning(f"the new item has no name, so the input item name {payload.get(name_key)} is used")
+            item[name_key] = payload.get(name_key)
+        local_item_file = self.get_local_single_item_file_from_item(item=item, item_type=item_type)
+        self.always_overwrite_or_compare_overwrite(local_file=local_item_file, data=item, overwrite=True)
+        return item
+
+    # put a single item by call Octopus API /api/{space_id}/item_type/{id} with 'put' operation
+    def put_single_item(self, item_type, payload):
+        if not item_type or not payload:
+            raise ValueError("item_type and playload must not be empty")
+        self.logger.info(f"put a single {item_type} {payload.get(id_key)} to space {self.config.space_id}")
+        space_url = self.config.space_id + slash_sign if self.config.space_id else ""
+        # some type has no id like http://server/api/Spaces-1/dashboardconfiguration
+        url_suffix = space_url + item_type + (slash_sign + payload.get(id_key) if payload.get(id_key) else "")
+        item = call_octopus(operation=operation_put, payload=payload, config=self.config, url_suffix=url_suffix)
+        Common.pop_last_modified(item)
+        self.logger.info(f"{item_type} {id_key} is " + item[id_key])
+        return item
+
+    # put a single item by call Octopus API /api/{space_id}/item_type/{id} with 'put' operation
+    # then save the item locally
+    def put_single_item_save(self, item_type, payload, overwrite=False):
+        item_info = payload.get(name_key) if payload.get(name_key) else payload.get(id_key)
+        self.logger.info(f"updating {item_type} {item_info} in {self.config.space_id} and saving to a local file...")
+        if self.config.overwrite or overwrite \
+                or input(f"Are you sure to update {item_type} {item_info} in {self.config.space_id} [Y/n]: ") == 'Y':
+            item = self.put_single_item(item_type=item_type, payload=payload)
+            local_item_file = self.get_local_single_item_file_from_item(item=item, item_type=item_type)
+            save_file(file_path_name=local_item_file, content=item)
+            return item
+        return payload
+
+    # put a child-item by call Octopus API /api/{space_id}/child_type/{id} with 'put' operation
+    # then save the item locally
+    def put_child_item_save(self, parent_name, child_type, payload):
+        self.logger.info(f"put child {child_type} {payload.get(id_key)} of parent {parent_name} in space"
+                         f"{self.config.space_id}")
+        child_item = self.put_single_item(item_type=child_type, payload=payload)
+        local_child_file = self.get_local_child_file(parent_name=parent_name, child_type=child_type)
         save_file(file_path_name=local_child_file, content=child_item)
+        return child_item
 
+    # update an item on Octopus server
+    # 1. check if the local item file is the same as the remote item on Octopus server
+    # 2. if same, exit, otherwise continue to ask if user wants to update item on Octopus server using the local item
+    # 3. if user input 'Y', update the item on Octopus and save the remote item locally
+    def update_single_item_save(self, item_type, item_name=None, item_id=None):
+        if not item_type or not item_name and not item_id:
+            raise ValueError("item_type and item_name/item_id must not be empty")
+        self.log_info_print(msg=f"updating {item_type} {item_name if item_name else item_id} in space "
+                                f"{self.config.space_id} from local file")
+        is_same, local_item, remote_item = \
+            self.is_local_same_as_remote(item_type=item_type, item_name=item_name, item_id=item_id)
+        if is_same:
+            self.log_info_print(msg=remote_local_same_msg)
+            return local_item
+        return self.put_single_item_save(item_type=item_type, payload=local_item)
 
-# clone a child-item of a parent-item from another parent-item
-def clone_child_item_from_another_parent_save(parent_name=None, base_parent_name=None, parent_type=None,
-                                              child_id_key=None, child_type=None, sub_item_key=None, space_id=None,
-                                              dst_space_id=None):
-    if not dst_space_id:
-        dst_space_id = space_id
-    logger.info(f"Clone {parent_type} {base_parent_name}'s child item {child_type} in {space_id} "
-                f"to {parent_type} {parent_name} in {dst_space_id}")
-    base_child_item = get_child_item(parent_name=base_parent_name, parent_type=parent_type, child_id_key=child_id_key,
-                                     child_type=child_type, space_id=space_id)
-    return __clone_child_item_save(dst_space_id=dst_space_id, parent_name=parent_name,
-                                   parent_type=parent_type, child_type=child_type, child_id_key=child_id_key,
-                                   sub_item_key=sub_item_key, base_child_item=base_child_item,
-                                   overwrite=config.overwrite)
+    # delete unused sub items if the item cannot be deleted due to some sub items are being used
+    def delete_sub_items(self, item_type, item_name=None, item_id=None):
+        item_badge = item_name if item_name else item_id
+        sub_item_tuple = item_type_sub_item_map.get(item_type)
+        if not sub_item_tuple:
+            self.logger.warning(f"{item_type} {item_badge} does not have sub items for deleting; exit")
+            return
+        item = self.get_single_item_by_name_or_id(item_type=item_type, item_name=item_name, item_id=item_id)
+        if not item:
+            self.logger.warning(f"{item_type} {item_badge} does not exist in {self.config.space_id}; exit")
+            return
+        sub_items_key = sub_item_tuple[0]
+        sub_item_name_key = sub_item_tuple[1]
+        self.log_info_print(msg=f"deleting the unused sub items {sub_items_key} of {item_type} {item_badge} in "
+                                f"{self.config.space_id}...")
+        index = 0
+        while index < len(item.get(sub_items_key)):
+            item_copy = copy.deepcopy(item)
+            sub_item = item_copy.get(sub_items_key).pop(index)
+            try:
+                item = self.put_single_item(item_type=item_type, payload=item_copy)
+                self.log_info_print(msg=f"sub item with {sub_item_name_key}: {sub_item.get(sub_item_name_key)} was "
+                                        f"deleted")
+            except ValueError as err:
+                self.logger.warning(err)
+                self.log_info_print(msg=f"sub item with {sub_item_name_key}: "
+                                        f"{sub_item.get(sub_item_name_key)} cannot be deleted; skip it")
+                index += 1
+        self.logger.info(f"----- completed deleting sub items -----")
 
+    # delete a single item
+    def delete_single_item_by_name_or_id(self, item_type, item_name=None, item_id=None):
+        if not item_type or not item_name and not item_id:
+            raise ValueError("item_type and item_name/item_id must not be empty")
+        item_info = item_name if item_name else item_id
+        item = self.get_single_item_by_name_or_id(item_type=item_type, item_name=item_name, item_id=item_id)
+        if not item:
+            self.logger.warning(f"{item_type} {item_info} does not exist in {self.config.space_id}; exit")
+            return
+        if not self.config.overwrite and input(
+                f"Are you sure to delete {item_type} {item_info} in {self.config.space_id} [Y/n]: ") != 'Y':
+            return
+        self.log_info_print(msg=f"deleting {item_type} {item_info} in {self.config.space_id}...")
+        try:
+            self.get_or_delete_single_item_by_id(item_type=item_type, item_id=item.get(id_key), action=operation_delete)
+        except ValueError as err:
+            self.logger.warning(err)
+            self.log_info_print(msg=f"{item_type} {item_info} cannot be deleted and try to delete unused sub items in "
+                                    f"{self.config.space_id}...")
+            self.delete_sub_items(item_type=item_type, item_id=item.get(id_key))
 
-def clone_item_by_id_replace_sub_item_save(item_type=None, src_item=None, dst_item_id=None, sub_item_key=None,
-                                           dst_space_id=None):
-    src_item_id = src_item.get(id_key)
-    logger.info(f"By replacing {sub_item_key}, clone {item_type} {src_item_id} from memory to "
-                f"{dst_item_id} in {dst_space_id}...")
-    dst_item = get_or_delete_single_item_by_id(item_type=item_type, item_id=dst_item_id, space_id=dst_space_id)
-    dst_item[sub_item_key] = src_item.get(sub_item_key)
-    dst_item = put_single_item_save(item_type=item_type, payload=dst_item, space_id=dst_space_id, overwrite=True)
-    return dst_item
+    # create a new single item from a local file
+    def create_single_item_from_local_file(self, item_type, local_item_name, item_name=None):
+        if not item_type or not local_item_name:
+            raise ValueError('item_type and local_item_name must not be empty')
+        self.log_info_print(msg=f"creating a new {item_type} {item_name} in space {self.config.space_id} from a local "
+                                f"file named {local_item_name}")
+        # load local item file
+        local_item_file = self.get_local_single_item_file(item_name=local_item_name, item_type=item_type)
+        local_item = load_file(local_item_file)
+        # rename item if needed
+        if item_name:
+            self.logger.info(f"Rename local item to {item_name}")
+            local_item[name_key] = item_name
+        remote = self.post_single_item_save(item_type=item_type, payload=local_item)
+        return remote
 
+    # create a new single item from an item on Octopus server
+    def clone_single_item_from_remote_item(self, item_type, item_name, base_item_name):
+        if not item_type or not item_name or not base_item_name:
+            raise ValueError('item_type and item_name and base_item_name must not be empty')
+        # read the remote base item
+        self.log_info_print(msg=f"cloning {item_type} {item_name} in space {self.config.space_id} based on remote item "
+                                f"{base_item_name}")
+        base_item = self.get_single_item_by_name(item_type=item_type, item_name=base_item_name)
+        if item_type == item_type_projects:
+            self.prepare_project_versioning_strategy(project=base_item)
+        # create a new item from the remote item
+        base_item[name_key] = item_name
+        item = self.post_single_item_save(item_type=item_type, payload=base_item)
+        return item
 
-def __clone_child_item_save(dst_space_id=None, parent_name=None, parent_type=None, child_type=None,
-                            child_id_key=None, sub_item_key=None, base_child_item=None, overwrite=False):
-    logger.info(f"Cloning child item {child_type} {base_child_item.get(id_key)} from memory to {parent_type} "
-                f"{parent_name} in {dst_space_id}...")
-    if config.overwrite or overwrite or input(f"Are you sure you want to clone child item {child_type} "
-                                              f"{base_child_item.get(id_key)} from memory to {parent_type} "
-                                              f"{parent_name} in {dst_space_id} [Y/n]: ") == 'Y':
-        dst_parent = get_single_item_by_name(item_type=parent_type, item_name=parent_name, space_id=dst_space_id)
-        dst_child_id = dst_parent.get(child_id_key)
-        dst_child_item = clone_item_by_id_replace_sub_item_save(item_type=child_type, src_item=base_child_item,
-                                                                dst_item_id=dst_child_id, sub_item_key=sub_item_key,
-                                                                dst_space_id=dst_space_id)
-        return dst_child_item
+    # get a single child-item of a parent item; the child-item has no 'Name' field, e.g. deployment processes of project
+    def get_child_item(self, parent_name, parent_type, child_id_key, child_type):
+        self.logger.info(f"getting child {child_type} of parent {parent_type} {parent_name} by {child_id_key} in "
+                         f"{self.config.space_id}")
+        parent = self.get_single_item_by_name(item_type=parent_type, item_name=parent_name)
+        return self.get_or_delete_single_item_by_id(item_type=child_type, item_id=parent.get(child_id_key))
 
+    # get a single child-item of a parent item; the child-item has no 'Name' field
+    # save the child-item into a local file with the file name of parent_name_child_type
+    def get_child_item_save(self, parent_name, parent_type, child_id_key, child_type):
+        self.log_info_print(msg=f"getting child {child_type} of parent {parent_type} {parent_name} by "
+                                f"{child_id_key} in {self.config.space_id}")
+        child_item = self.get_child_item(parent_name=parent_name, parent_type=parent_type, child_id_key=child_id_key,
+                                         child_type=child_type)
+        local_child_file = self.get_local_child_file(parent_name=parent_name, child_type=child_type)
+        self.always_overwrite_or_compare_overwrite(local_file=local_child_file, data=child_item)
+        return child_item
 
-def merge_local_to_remote(source_item=None, target_item=None, child_id_key=None):
-    source_children = source_item[child_id_key]
-    target_children = target_item[child_id_key]
-    target_children_names = set()
-    for target_child in target_children:
-        target_children_names.add(target_child[name_key])
-    for source_child in source_children:
-        if not source_child[name_key] in target_children_names:
-            source_child[id_key] = ""
-            target_children.append(source_child)
+    # update a single child-item of a parent item; the child-item has no 'Name' field
+    # 1. check if the local child-item file is the same as the remote child-item on Octopus server
+    # 2. if same, exit, otherwise ask if user wants to update the child-item on Octopus server using a local child-item
+    # 3. if user input 'Y', update the child-item on Octopus and save the remote child-item locally, otherwise exit
+    def update_child_item_from_local_save(self, parent_name, parent_type, child_id_key, child_type):
+        self.log_info_print(msg=f"update child {child_type} of {parent_type} {parent_name} in {self.config.space_id} by"
+                                f" {child_id_key}")
+        remote_child_item = self.get_child_item(parent_name=parent_name, parent_type=parent_type,
+                                                child_id_key=child_id_key, child_type=child_type)
+        local_child_file = self.get_local_child_file(parent_name=parent_name, child_type=child_type)
+        is_same, local_child_item = is_local_same_as_remote2(remote_item=remote_child_item,
+                                                             local_item_file=local_child_file)
+        if is_same:
+            self.log_info_print(msg=remote_local_same_msg)
+            return
+        if self.config.overwrite or input(
+                f"Are you sure you want to update {child_type} for {parent_name} [Y/n]: ") == 'Y':
+            child_item = self.put_single_item(item_type=child_type, payload=local_child_item)
+            save_file(file_path_name=local_child_file, content=child_item)
 
+    # clone a child-item of a parent-item from another parent-item
+    def clone_child_item_from_another_parent_save(self, parent_name, base_parent_name, parent_type,
+                                                  child_id_key, child_type, sub_item_key):
+        self.logger.info(f"Clone {parent_type} {base_parent_name}'s child item {child_type} in {self.config.space_id} "
+                         f"to {parent_type} {parent_name} in {self.config.space_id}")
+        base_child_item = self.get_child_item(parent_name=base_parent_name, parent_type=parent_type,
+                                              child_id_key=child_id_key, child_type=child_type)
+        return self._clone_child_item_save(parent_name=parent_name, parent_type=parent_type, child_type=child_type,
+                                           child_id_key=child_id_key, sub_item_key=sub_item_key,
+                                           base_child_item=base_child_item, overwrite=self.config.overwrite)
 
-def merge_single_item_save(item_type=None, item_name=None, item_id=None, child_id_key=None, space_id=None):
-    if not item_type or not item_name and not item_id or not child_id_key:
-        raise ValueError("item_type and item_name/item_id and child_id_key must not be empty")
-    log_info_print(local_logger=logger,
-                   msg=f"merging {item_type} {item_name if item_name else item_id} for child {child_id_key} in space "
-                       f"{space_id} from local file...")
-    is_same, local_item, remote_item = is_local_same_as_remote(item_type=item_type, item_name=item_name,
-                                                               item_id=item_id, space_id=space_id)
-    if is_same:
-        log_info_print(local_logger=logger, msg=remote_local_same_msg)
-        return local_item
-    merge_local_to_remote(source_item=local_item, target_item=remote_item, child_id_key=child_id_key)
-    return put_single_item_save(item_type=item_type, payload=remote_item, space_id=space_id)
+    def clone_item_by_id_replace_sub_item_save(self, item_type, src_item, dst_item_id, sub_item_key):
+        src_item_id = src_item.get(id_key)
+        self.logger.info(f"By replacing {sub_item_key}, clone {item_type} {src_item_id} from memory to "
+                         f"{dst_item_id} in {self.config.space_id}...")
+        dst_item = self.get_or_delete_single_item_by_id(item_type=item_type, item_id=dst_item_id)
+        dst_item[sub_item_key] = src_item.get(sub_item_key)
+        dst_item = self.put_single_item_save(item_type=item_type, payload=dst_item, overwrite=True)
+        return dst_item
 
+    def _clone_child_item_save(self, parent_name, parent_type, child_type, child_id_key, sub_item_key, base_child_item,
+                               overwrite=False):
+        self.logger.info(f"Cloning child item {child_type} {base_child_item.get(id_key)} from memory to {parent_type} "
+                         f"{parent_name} in {self.config.space_id}...")
+        if self.config.overwrite or overwrite or input(f"Are you sure you want to clone child item {child_type} "
+                                                       f"{base_child_item.get(id_key)} from memory to {parent_type} "
+                                                       f"{parent_name} in {self.config.space_id} [Y/n]: ") == 'Y':
+            dst_parent = self.get_single_item_by_name(item_type=parent_type, item_name=parent_name)
+            dst_child_id = dst_parent.get(child_id_key)
+            dst_child_item = self.clone_item_by_id_replace_sub_item_save(
+                item_type=child_type, src_item=base_child_item, dst_item_id=dst_child_id, sub_item_key=sub_item_key)
+            return dst_child_item
 
-def get_list_items_from_file(item_type=None, space_id=None):
-    if not item_type:
-        raise ValueError("item_type must not be empty!")
-    all_items_file = get_local_all_items_file(item_type=item_type, space_id=space_id)
-    logger.info(f"load all_items file {all_items_file}...")
-    all_items = load_file(all_items_file)
-    return get_list_items_from_all_items(all_items=all_items)
+    def merge_local_to_remote(self, source_item, target_item, child_id_key):
+        self.log_info_print(item=[source_item, target_item], msg=f"merge local item to remote item by {child_id_key}")
+        source_children = source_item[child_id_key]
+        target_children = target_item[child_id_key]
+        target_children_names = set()
+        for target_child in target_children:
+            target_children_names.add(target_child[name_key])
+        for source_child in source_children:
+            if not source_child[name_key] in target_children_names:
+                source_child[id_key] = ""
+                target_children.append(source_child)
 
+    def merge_single_item_save(self, item_type, item_name, item_id, child_id_key):
+        if not item_type or not item_name and not item_id or not child_id_key:
+            raise ValueError("item_type and item_name/item_id and child_id_key must not be empty")
+        self.log_info_print(msg=f"merging {item_type} {item_name if item_name else item_id} for child {child_id_key} "
+                                f"in space {self.config.space_id} from local file...")
+        is_same, local_item, remote_item = self.is_local_same_as_remote(
+            item_type=item_type, item_name=item_name, item_id=item_id)
+        if is_same:
+            self.log_info_print(msg=remote_local_same_msg)
+            return local_item
+        self.merge_local_to_remote(source_item=local_item, target_item=remote_item, child_id_key=child_id_key)
+        return self.put_single_item_save(item_type=item_type, payload=remote_item)
 
-def find_child_item_from_list(parent=None, list_items=None, child_id_key=None):
-    item_id_value = parent.get(child_id_key)
-    logger.info(f"Find {parent.get(name_key)}'s child item with ({child_id_key} = {item_id_value})")
-    return find_item(lst=list_items, key=id_key, value=item_id_value)
+    def get_list_items_from_file(self, item_type):
+        if not item_type:
+            raise ValueError("item_type must not be empty!")
+        all_items_file = self.get_local_all_items_file(item_type=item_type)
+        self.logger.info(f"load all_items file {all_items_file}...")
+        all_items = load_file(all_items_file)
+        return self.get_list_items_from_all_items(all_items=all_items)
 
+    def find_child_item_from_list(self, parent, list_items, child_id_key):
+        item_id_value = parent.get(child_id_key)
+        self.logger.info(f"Find {parent.get(name_key)}'s child item with ({child_id_key} = {item_id_value})")
+        return find_item(lst=list_items, key=id_key, value=item_id_value)
 
-# request an item by calling Octopus API /api/{space_id}/address
-def request_octopus_item(payload=None, space_id=None, address=None, action=operation_get):
-    space_url = space_id + slash_sign if space_id else ""
-    url_suffix = space_url + address
-    item = call_octopus(operation=action, payload=payload, config=config, url_suffix=url_suffix)
-    pop_last_modified(item)
-    return item
+    # request an item by calling Octopus API /api/{space_id}/address
+    def request_octopus_item(self, address, payload=None, action=operation_get):
+        space_url = self.config.space_id + slash_sign if self.config.space_id else ""
+        url_suffix = space_url + address
+        item = call_octopus(operation=action, payload=payload, config=self.config, url_suffix=url_suffix)
+        Common.pop_last_modified(item)
+        return item
 
+    def find_sub_by_item(self, item_type, item_id, sub_type, sub_name):
+        address = item_type + slash_sign + item_id + slash_sign + sub_type
+        sub_items = self.request_octopus_item(payload=None, address=address, action=operation_get)
+        list_sub_items = self.get_list_items_from_all_items(all_items=sub_items)
+        return find_item(lst=list_sub_items, key=name_key, value=sub_name)
 
-def find_sub_by_item(item_type=None, item_id=None, sub_type=None, sub_name=None, space_id=None):
-    address = item_type + slash_sign + item_id + slash_sign + sub_type
-    sub_items = request_octopus_item(payload=None, space_id=space_id, address=address, action=operation_get)
-    list_sub_items = get_list_items_from_all_items(all_items=sub_items)
-    return find_item(lst=list_sub_items, key=name_key, value=sub_name)
+    def get_item_id_by_name(self, item_type, item_name):
+        item = self.get_single_item_by_name(item_type=item_type, item_name=item_name)
+        return item.get(id_key)
 
+    def get_list_variables_by_set_name_or_id(self, set_name=None, set_id=None):
+        if set_name:
+            library_variable_set = \
+                self.get_single_item_by_name(item_type=item_type_library_variable_sets, item_name=set_name)
+            if not library_variable_set:
+                self.logger.info(f"library variable set {set_name} could not be found in space {self.config.space_id}")
+                return []
+            set_id = library_variable_set.get(variable_set_id_key)
+        variables_dict = \
+            self.get_or_delete_single_item_by_id(item_type=item_type_variables, item_id=set_id)
+        return variables_dict.get(variables_key)
 
-def get_item_id_by_name(item_type=None, item_name=None, space_id=None):
-    item = get_single_item_by_name(item_type=item_type, item_name=item_name, space_id=space_id)
-    return item.get(id_key)
+    def get_one_type_to_list(self, item_type):
+        all_items = self.get_one_type_ignore_error(item_type=item_type)
+        return self.get_list_items_from_all_items(all_items=all_items)
 
+    def get_task_status(self, task_id):
+        self.logger.info(f"check the status of task {task_id} in space {self.config.space_id}")
+        task = self.get_or_delete_single_item_by_id(item_type=item_type_tasks, item_id=task_id)
+        self.save_single_item(item_type=item_type_tasks, item=task)
+        self.logger.info(f"the task's status is {task.get(state_key)} and description is: {task.get(description_key)}")
+        self.log_info_print(msg=f"{task.get(state_key)}")
+        return task.get(state_key)
 
-def get_list_variables_by_set_name_or_id(set_name=None, set_id=None, space_id=None):
-    if set_name:
-        library_variable_set = \
-            get_single_item_by_name(item_type=item_type_library_variable_sets, item_name=set_name, space_id=space_id)
-        if not library_variable_set:
-            logger.info(f"library variable set {set_name} could not be found in space {space_id}")
-            return []
-        set_id = library_variable_set.get(variable_set_id_key)
-    variables_dict = \
-        get_or_delete_single_item_by_id(item_type=item_type_variables, item_id=set_id, space_id=space_id)
-    return variables_dict.get(variables_key)
-
-
-def get_one_type_to_list(item_type=None, space_id=None):
-    all_items = get_one_type_ignore_error(item_type=item_type, space_id=space_id)
-    return get_list_items_from_all_items(all_items=all_items)
-
-
-def get_task_status(task_id=None, space_id=None):
-    logger.info(f"check the status of task {task_id} in space {space_id}")
-    task = get_or_delete_single_item_by_id(item_type=item_type_tasks, item_id=task_id, space_id=space_id)
-    save_single_item(item_type=item_type_tasks, item=task, space_id=space_id)
-    logger.info(f"the task's status is {task.get(state_key)} and description is: {task.get(description_key)}")
-    log_info_print(local_logger=logger, msg=f"{task.get(state_key)}")
-    return task.get(state_key)
-
-
-def wait_task(task_id=None, space_id=None, time_limit_second=600):
-    log_info_print(local_logger=logger, msg=f"wait for task {task_id} in space {space_id} to complete until time out "
-                                            f"at {time_limit_second} seconds")
-    counter = 0
-    while get_task_status(task_id=task_id, space_id=space_id) == executing_string:
-        log_info_print(local_logger=logger, msg=f"{counter} seconds")
-        if counter > time_limit_second:
-            log_info_print(local_logger=logger,
-                           msg=f"task {task_id} takes longer than {time_limit_second} seconds and times out")
-            return executing_string
-        time.sleep(1)
-        counter += 1
-    status = get_task_status(task_id=task_id, space_id=space_id)
-    log_info_print(local_logger=logger,
-                   msg=f"task {task_id} in space {space_id} completes with status {status} at {counter} seconds")
-    return status
+    def wait_task(self, task_id, time_limit_second=600):
+        self.log_info_print(msg=f"wait for task {task_id} in space {self.config.space_id} to complete until time out "
+                                f"at {time_limit_second} seconds")
+        counter = 0
+        while self.get_task_status(task_id=task_id) == executing_string:
+            self.log_info_print(msg=f"{counter} seconds")
+            if counter > time_limit_second:
+                self.log_info_print(msg=f"task {task_id} takes longer than {time_limit_second} seconds and times out")
+                return executing_string
+            time.sleep(1)
+            counter += 1
+        status = self.get_task_status(task_id=task_id)
+        self.log_info_print(msg=f"task {task_id} in space {self.config.space_id} completes with status {status} at "
+                                f"{counter} seconds")
+        return status

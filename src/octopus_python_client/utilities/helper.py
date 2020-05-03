@@ -37,7 +37,7 @@ def find_matched_sub_list(lst=None, match_dict=None, ignore_case=False):
     list_copy = copy.deepcopy(lst)
     # we must do reversely to avoid unexpected result on deleting by index
     for index in range(len(list_copy) - 1, -1, -1):
-        logger.info(f"working on the index {index} of the input list")
+        # logger.info(f"working on the index {index} of the input list")
         dic = list_copy[index]
         for match_key, match_value in match_dict.items():
             if ignore_case and dic.get(match_key) != match_value and dic.get(match_key).lower() == match_value.lower():
@@ -57,7 +57,7 @@ def find_matched_sub_list(lst=None, match_dict=None, ignore_case=False):
 def replace_list_new_value(lst=None, match_dict=None, replace_dict=None):
     logger.info(f"replace with {replace_dict} in list matching the input {match_dict}")
     for index, dic in enumerate(lst):
-        logger.info(f"working on the index {index} of the input list")
+        # logger.info(f"working on the index {index} of the input list")
         match = True
         for match_key, match_value in match_dict.items():
             if dic.get(match_key) != match_value:
@@ -192,3 +192,12 @@ def log_raise_value_error(local_logger=logger, item=None, err=None):
     if item:
         local_logger.info(pformat(item))
     raise ValueError(err)
+
+
+# check if the local item file is the same as the item on Octopus server
+# the remote item is an input
+def is_local_same_as_remote2(remote_item, local_item_file):
+    if not remote_item or not local_item_file:
+        raise ValueError('remote_item and local_item_file must not be empty')
+    local_item = load_file(local_item_file)
+    return compare_dicts(local_item, remote_item), local_item

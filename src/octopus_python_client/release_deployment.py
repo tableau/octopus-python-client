@@ -2,15 +2,14 @@ import json
 import logging
 from pprint import pformat
 
-from octopus_python_client.common import request_octopus_item, item_type_deployment_processes, verify_space, \
-    item_type_projects, get_single_item_by_name, id_key, deployment_process_id_key, item_type_channels, \
-    find_sub_by_item, packages_key, action_name_key, package_reference_name_key, feed_id_key, package_id_key, \
-    item_type_feeds, item_type_packages, version_key, items_key, get_list_variables_by_set_name_or_id, name_key, \
+from octopus_python_client.common import item_type_deployment_processes, item_type_projects, id_key, \
+    deployment_process_id_key, item_type_channels, packages_key, action_name_key, package_reference_name_key, \
+    feed_id_key, package_id_key, item_type_feeds, item_type_packages, version_key, items_key, name_key, \
     value_key, project_id_key, next_version_increment_key, release_notes_key, channel_id_key, selected_packages_key, \
-    item_type_releases, save_single_item, item_type_deployments, item_type_tenants, item_type_environments, \
-    get_item_id_by_name, tenant_id_key, environment_id_key, release_id_key, comments_key, log_info_print, \
-    release_versions_key, url_prefix_key, dot_sign, sha_key, author_key, newline_sign, get_list_items_from_all_items, \
-    item_type_library_variable_sets, latest_commit_sha_key, timestamp_key, title_key, hyphen_sign
+    item_type_releases, item_type_deployments, item_type_tenants, item_type_environments, tenant_id_key, \
+    environment_id_key, release_id_key, comments_key, release_versions_key, url_prefix_key, dot_sign, sha_key, \
+    author_key, newline_sign, item_type_library_variable_sets, latest_commit_sha_key, timestamp_key, title_key, \
+    hyphen_sign, Common
 from octopus_python_client.utilities.helper import replace_list_new_value, parse_string, find_item
 from octopus_python_client.utilities.send_requests_to_octopus import operation_post
 
@@ -18,15 +17,12 @@ logger = logging.getLogger(__name__)
 
 
 class ReleaseDeployment:
-    def __init__(self, project_name=None, channel_name=None, notes=None, space_id_name=None):
-        assert space_id_name, "space name/id must not be empty!"
+    def __init__(self, config, project_name, channel_name=None, notes=None):
+        self._config = config
+        self._common = Common(config=self._config)
+
         assert project_name, "project name must not be empty!"
-
-        self._space_id = verify_space(space_id_name=space_id_name)
-        assert self._space_id, f"Space {space_id_name} cannot be found or you do not have permission to access!"
-
-        project = get_single_item_by_name(item_type=item_type_projects, item_name=project_name,
-                                          space_id=self._space_id)
+        project = self._common.get_single_item_by_name(item_type=item_type_projects, item_name=project_name)
         assert project, f"Project {project_name} cannot be found or you do not have permission to access!"
         self._project_id = project.get(id_key)
         self._deployment_process_id = project.get(deployment_process_id_key)
@@ -35,8 +31,8 @@ class ReleaseDeployment:
 
         self._channel_id = ""
         if channel_name:
-            channel = find_sub_by_item(item_type=item_type_projects, item_id=self._project_id,
-                                       sub_type=item_type_channels, sub_name=channel_name, space_id=self._space_id)
+            channel = self._common.find_sub_by_item(item_type=item_type_projects, item_id=self._project_id,
+                                                    sub_type=item_type_channels, sub_name=channel_name)
             assert channel, f"Cannot find channel {channel_name} in project {project_name}"
             self._channel_id = channel.get(id_key)
         if self._channel_id:
@@ -56,9 +52,8 @@ class ReleaseDeployment:
         self._gitlab_url_prefix = self._get_url_prefix(set_name="gitlab_info")
         self._latest_commit_dict = None
 
-    def _get_url_prefix(self, set_name=None):
-        info_service_list_variables = get_list_variables_by_set_name_or_id(set_name=set_name,
-                                                                           space_id=self._space_id)
+    def _get_url_prefix(self, set_name):
+        info_service_list_variables = self._common.get_list_variables_by_set_name_or_id(set_name=set_name)
         if info_service_list_variables:
             url_prefix_variable = find_item(lst=info_service_list_variables, key=name_key, value=url_prefix_key)
             if url_prefix_variable:
@@ -67,10 +62,10 @@ class ReleaseDeployment:
 
     def _get_deployment_process_template(self):
         logger.info(f"Fetching deployment process template from {self._deployment_process_id} with channel "
-                    f"{self._channel_id} in {self._space_id}, which is used for defining release and deployment")
+                    f"{self._channel_id} in {self._config.space_id}, which is used for defining release and deployment")
         address = f"{item_type_deployment_processes}/{self._deployment_process_id}/template?channel=" \
                   f"{self._channel_id}"
-        self._template = request_octopus_item(space_id=self._space_id, address=address)
+        self._template = self._common.request_octopus_item(address=address)
 
     def _get_selected_packages(self):
         logger.info(f"getting package information for each step")
@@ -80,13 +75,13 @@ class ReleaseDeployment:
                         f"{package.get(package_reference_name_key)}")
             address = f"{item_type_feeds}/{package.get(feed_id_key)}/{item_type_packages}/versions?packageId=" \
                       f"{package.get(package_id_key)}&take=1"
-            package_detail = request_octopus_item(space_id=self._space_id, address=address)
+            package_detail = self._common.request_octopus_item(address=address)
             selected_package = {action_name_key: package.get(action_name_key),
                                 package_reference_name_key: package.get(package_reference_name_key),
                                 version_key: package_detail.get(items_key)[0].get(version_key)}
             self._selected_packages.append(selected_package)
 
-    def _update_package_version(self, package=None, version=None):
+    def _update_package_version(self, package, version):
         match_dict = {package_reference_name_key: package}
         replace_dict = {version_key: version}
         replace_list_new_value(lst=self._selected_packages, match_dict=match_dict, replace_dict=replace_dict)
@@ -94,8 +89,8 @@ class ReleaseDeployment:
     def _update_selected_packages(self):
         logger.info("update package versions...")
         if self._packages_variable_set_name:
-            list_release_versions = get_list_variables_by_set_name_or_id(set_name=self._packages_variable_set_name,
-                                                                         space_id=self._space_id)
+            list_release_versions = self._common.get_list_variables_by_set_name_or_id(
+                set_name=self._packages_variable_set_name)
             for package_version in list_release_versions:
                 self._update_package_version(package=package_version.get(name_key),
                                              version=package_version.get(value_key))
@@ -103,7 +98,7 @@ class ReleaseDeployment:
             for package, version in self._package_version_dict.items():
                 self._update_package_version(package=package, version=version)
 
-    def _form_single_commit_note(self, commit_variable=None):
+    def _form_single_commit_note(self, commit_variable):
         date_time = commit_variable.get(name_key)
         commit_json = commit_variable.get(value_key)
         commit_dict = json.loads(commit_json)
@@ -117,8 +112,8 @@ class ReleaseDeployment:
         # find the latest/previous release for this project
         logger.info(f"loading all releases from project {self._project_id}")
         address = f"{item_type_projects}/{self._project_id}/{item_type_releases}"
-        releases = request_octopus_item(space_id=self._space_id, address=address)
-        list_releases = get_list_items_from_all_items(all_items=releases)
+        releases = self._common.request_octopus_item(address=address)
+        list_releases = self._common.get_list_items_from_all_items(all_items=releases)
         prev_release_match_commit_date_time = ""
         list_notes = ["\n========== below is auto-generated notes =========="]
         if list_releases:
@@ -146,8 +141,8 @@ class ReleaseDeployment:
         list_notes.append(topic_note)
 
         # historical commits since the latest release
-        list_configuration_commits = get_list_variables_by_set_name_or_id(
-            set_name=self._commits_variable_set_name, space_id=self._space_id)
+        list_configuration_commits = self._common.get_list_variables_by_set_name_or_id(
+            set_name=self._commits_variable_set_name)
         if not list_configuration_commits:
             msg = f"\nVariable set {self._commits_variable_set_name} contains NONE historical commits. No commits " \
                   f"can be matched to the releases."
@@ -198,8 +193,8 @@ class ReleaseDeployment:
             self._packages_variable_set_name = notes.get(release_versions_key)
             self._package_version_dict = notes.get(item_type_packages)
             self._update_selected_packages()
-        if get_single_item_by_name(item_type=item_type_library_variable_sets,
-                                   item_name=self._commits_variable_set_name, space_id=self._space_id):
+        if self._common.get_single_item_by_name(item_type=item_type_library_variable_sets,
+                                                item_name=self._commits_variable_set_name):
             commit_notes = self._generate_commits_notes()
             self._release_request_payload[release_notes_key] = newline_sign.join([self._notes, commit_notes])
 
@@ -214,51 +209,45 @@ class ReleaseDeployment:
         self._release_request_payload[selected_packages_key] = self._selected_packages
         logger.info("the request release payload is")
         logger.info(pformat(self._release_request_payload))
-        self._release_response = request_octopus_item(payload=self._release_request_payload, space_id=self._space_id,
-                                                      address=item_type_releases, action=operation_post)
+        self._release_response = self._common.request_octopus_item(payload=self._release_request_payload,
+                                                                   address=item_type_releases, action=operation_post)
         if self._latest_commit_dict:
             self._release_response[latest_commit_sha_key] = self._latest_commit_dict.get(sha_key)
         logger.info("the response release payload is")
         logger.info(pformat(self._release_response))
-        save_single_item(item_type=item_type_releases, item=self._release_response, space_id=self._space_id)
+        self._common.save_single_item(item_type=item_type_releases, item=self._release_response)
         self._release_id = self._release_response.get(id_key)
         return self._release_response
 
     @staticmethod
-    def create_deployment_direct(release_id=None, environment_name=None, tenant_name=None, space_id_name=None,
-                                 comments=None):
-        logger.info(f"creating a deployment for {release_id} in space {space_id_name} with environment "
+    def create_deployment_direct(config, release_id, environment_name, tenant_name, comments=None):
+        logger.info(f"creating a deployment for {release_id} in space {config.space_id} with environment "
                     f"{environment_name}, tenant {tenant_name} and comments: {comments}")
+        common = Common(config=config)
 
         assert release_id, "release_id must not be empty!"
-        assert space_id_name, "space id/name must not be empty!"
         assert environment_name, "environment_name must not be empty!"
         assert tenant_name, "tenant_name must not be empty!"
 
-        space_id = verify_space(space_id_name=space_id_name)
-        assert space_id, f"Space {space_id_name} cannot be found or you do not have permission to access!"
-
-        deployment_request_payload = {release_id_key: release_id,
-                                      environment_id_key: get_item_id_by_name(item_type=item_type_environments,
-                                                                              item_name=environment_name,
-                                                                              space_id=space_id),
-                                      tenant_id_key: get_item_id_by_name(item_type=item_type_tenants,
-                                                                         item_name=tenant_name,
-                                                                         space_id=space_id),
-                                      comments_key: comments}
+        deployment_request_payload = \
+            {release_id_key: release_id,
+             environment_id_key: common.get_item_id_by_name(item_type=item_type_environments,
+                                                            item_name=environment_name),
+             tenant_id_key: common.get_item_id_by_name(item_type=item_type_tenants, item_name=tenant_name),
+             comments_key: comments}
         logger.info("the request deployment payload is")
         logger.info(pformat(deployment_request_payload))
-        deployment_response_payload = request_octopus_item(payload=deployment_request_payload, space_id=space_id,
-                                                           address=item_type_deployments, action=operation_post)
+        deployment_response_payload = common.request_octopus_item(payload=deployment_request_payload,
+                                                                  address=item_type_deployments, action=operation_post)
         logger.info("the response deployment payload is")
-        log_info_print(local_logger=logger, msg=json.dumps(deployment_response_payload))
-        save_single_item(item_type=item_type_deployments, item=deployment_response_payload, space_id=space_id)
+        common.log_info_print(local_logger=logger, msg=json.dumps(deployment_response_payload))
+        common.save_single_item(item_type=item_type_deployments, item=deployment_response_payload)
         return deployment_response_payload
 
-    def create_deployment_for_current_release(self, environment_name=None, tenant_name=None, comments=None):
-        return self.create_deployment_direct(
-            release_id=self._release_id, environment_name=environment_name, tenant_name=tenant_name,
-            space_id_name=self._space_id, comments=comments)
+    def create_deployment_for_current_release(self, config, environment_name=None, tenant_name=None, comments=None):
+        return ReleaseDeployment.create_deployment_direct(config=config, release_id=self._release_id,
+                                                          environment_name=environment_name, tenant_name=tenant_name,
+                                                          comments=comments)
 
     @property
     def release_id(self):
@@ -271,19 +260,18 @@ class ReleaseDeployment:
         return self._release_response
 
     @staticmethod
-    def create_release_direct(release_version=None, project_name=None, channel_name=None, notes=None,
-                              space_id_name=None):
-        release = ReleaseDeployment(project_name=project_name, channel_name=channel_name, notes=notes,
-                                    space_id_name=space_id_name)
+    def create_release_direct(config, release_version, project_name, channel_name=None, notes=None):
+        common = Common(config=config)
+        release = ReleaseDeployment(config=config, project_name=project_name, channel_name=channel_name, notes=notes)
         release.create_release(release_version=release_version)
-        log_info_print(local_logger=logger, msg=json.dumps(release.release_response))
+        common.log_info_print(local_logger=logger, msg=json.dumps(release.release_response))
         return release
 
     @staticmethod
-    def create_release_deployment(release_version=None, project_name=None, channel_name=None, notes=None,
-                                  space_id_name=None, environment_name=None, tenant_name=None, comments=None):
-        release = ReleaseDeployment.create_release_direct(release_version=release_version, project_name=project_name,
-                                                          channel_name=channel_name, notes=notes,
-                                                          space_id_name=space_id_name)
-        return release.create_deployment_for_current_release(environment_name=environment_name, tenant_name=tenant_name,
-                                                             comments=comments)
+    def create_release_deployment(config, release_version, project_name, comments, channel_name=None, notes=None,
+                                  environment_name=None, tenant_name=None):
+        release = ReleaseDeployment.create_release_direct(
+            config=config, release_version=release_version, project_name=project_name, channel_name=channel_name,
+            notes=notes)
+        return release.create_deployment_for_current_release(config=config, environment_name=environment_name,
+                                                             tenant_name=tenant_name, comments=comments)

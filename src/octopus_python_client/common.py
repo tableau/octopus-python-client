@@ -60,7 +60,7 @@ name_key = 'Name'
 new_value_key = "NewValue"
 next_version_increment_key = "NextVersionIncrement"
 no_stdout_key = "no_stdout"
-octopus_endpoint_key = "octopus_endpoint"
+octopus_endpoint_key = "endpoint"
 octopus_name_key = "octopus_name"
 owner_id_key = "OwnerId"
 overwrite_key = "overwrite"
@@ -234,7 +234,7 @@ item_id_prefix_to_type_dict = {environments_prefix: item_type_environments, tena
 
 class Config:
     def __init__(self):
-        self.octopus_endpoint = None
+        self.endpoint = None
         self.octopus_name = None
         self.api_key = None
         self.user_name = None
@@ -242,7 +242,7 @@ class Config:
         self.space_id = None
         self.overwrite = False
         self.no_stdout = False
-        self.fake_space = False
+        self.local_source = False
         self.current_path = None
         self.get_config()
 
@@ -250,7 +250,7 @@ class Config:
         code_path = os.path.dirname(os.path.abspath(__file__))
         config_file = os.path.join(code_path, folder_configurations, file_configuration)
         config_dict = load_file(config_file)
-        self.octopus_endpoint = config_dict.get(octopus_endpoint_key)
+        self.endpoint = config_dict.get(octopus_endpoint_key)
         self.octopus_name = config_dict.get(octopus_name_key)
         self.api_key = config_dict.get(api_key_key)
         self.user_name = config_dict.get(user_name_key)

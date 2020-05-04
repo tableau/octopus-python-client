@@ -22,15 +22,15 @@ x_octopus_api_key_key = "X-Octopus-ApiKey"
 logger = logging.getLogger(__name__)
 
 
-def call_octopus(config=None, url_suffix=None, operation=None, payload=None):
-    url = config.octopus_endpoint + url_suffix if url_suffix else config.octopus_endpoint
+def call_octopus(config, url_suffix=None, operation=None, payload=None):
+    url = config.endpoint + url_suffix if url_suffix else config.endpoint
     operation = operation if operation else operation_get
     with requests.Session() as session:
         if config.api_key:
             headers = {content_type_key: application_json, x_octopus_api_key_key: config.api_key}
         elif config.user_name and config.password:
             headers = {content_type_key: application_json}
-            login_url = config.octopus_endpoint + users_login_url_suffix
+            login_url = config.endpoint + users_login_url_suffix
             login_payload = {login_payload_user_name_key: config.user_name, login_payload_password_key: config.password}
             session.post(login_url, json=login_payload, headers=headers)
         else:
@@ -66,7 +66,7 @@ def call_octopus(config=None, url_suffix=None, operation=None, payload=None):
 # TODO for testing purpose, to be removed
 def run():
     print("==================== test octopus http requests ===================")
-    octopus_config = {"octopus_endpoint": "https://demo.octopusdeploy.com/api/", "api_key": None, "user_name": "guest",
+    octopus_config = {"endpoint": "https://demo.octopusdeploy.com/api/", "api_key": None, "user_name": "guest",
                       "password": "guest"}
     response = call_octopus(config=SimpleNamespace(**octopus_config), url_suffix="Spaces-1/environments")
     print(json.dumps(response))

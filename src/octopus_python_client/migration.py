@@ -215,7 +215,11 @@ class Migration:
                 #     self.logger.info(f"{version_key} is updated to {dst_item.get(version_key)}")
                 #     src_item_copy[version_key] = dst_item.get(version_key)
 
-                dst_item = self._dst_common.put_single_item(item_type=item_type, payload=src_item_copy)
+                # sometimes, overwrite may not be successful due to different reasons, we can skip in most cases
+                try:
+                    dst_item = self._dst_common.put_single_item(item_type=item_type, payload=src_item_copy)
+                except Exception as err:
+                    self._dst_common.log_warn_print(local_logger=self.logger, msg=err)
             else:
                 self._dst_common.log_info_print(local_logger=self.logger,
                                                 msg=f"{self._dst_config.space_id} already has {item_type} "
@@ -396,7 +400,12 @@ class Migration:
             self.logger.info(f"child {version_key} is updated to {dst_child.get(version_key)}")
             src_child_copy[version_key] = dst_child.get(version_key)
 
-        dst_child = self._dst_common.put_single_item(item_type=child_type, payload=src_child_copy)
+        # sometimes, overwrite may not be successful due to different reasons, we can skip in most cases
+        try:
+            dst_child = self._dst_common.put_single_item(item_type=child_type, payload=src_child_copy)
+        except Exception as err:
+            self._dst_common.log_warn_print(local_logger=self.logger, msg=err)
+
         self._dst_id_payload_dict[dst_child_id] = dst_child
         return dst_child_id
 
@@ -446,8 +455,13 @@ class Migration:
 
         self._replace_ids(dict_list=src_tenant_variables_copy)
 
-        dst_tenant_variables = self._dst_common.put_post_tenant_variables(tenant_id=dst_id,
-                                                                          tenant_variables=src_tenant_variables_copy)
+        # sometimes, overwrite may not be successful due to different reasons, we can skip in most cases
+        try:
+            dst_tenant_variables = \
+                self._dst_common.put_post_tenant_variables(tenant_id=dst_id, tenant_variables=src_tenant_variables_copy)
+        except Exception as err:
+            dst_tenant_variables = self._dst_common.get_tenant_variables(tenant_id=dst_id)
+            self._dst_common.log_warn_print(local_logger=self.logger, msg=err)
 
         self._dst_tenant_variables_payload_dict[dst_id] = dst_tenant_variables
 
@@ -489,10 +503,10 @@ class Migration:
         return item_id
 
     def _load_types(self):
-        if self._src_config.fake_space:
+        if self._src_config.local_source:
             self._dst_common.log_info_print(
                 local_logger=self.logger,
-                msg=f"Reading files {inside_space_download_types} from fake space {self._src_config.space_id}...")
+                msg=f"Reading files {inside_space_download_types} from local source {self._src_config.space_id}...")
         else:
             self._dst_common.log_info_print(
                 local_logger=self.logger,
@@ -502,9 +516,9 @@ class Migration:
             self._dst_common.log_info_print(local_logger=self.logger,
                                             msg=f"loading type {item_type} from space {self._src_config.space_id}")
             # for cloning space from another Octopus server
-            if self._src_config.fake_space:
+            if self._src_config.local_source:
                 self.logger.info(
-                    f"Loading {item_type} in source fake space {self._src_config.space_id} from the local file...")
+                    f"Loading {item_type} in source local source {self._src_config.space_id} from the local file...")
                 src_list_items = self._src_common.get_list_items_from_file(item_type=item_type)
             # for cloning space to space on the same Octopus server
             else:
@@ -512,10 +526,10 @@ class Migration:
                 src_list_items = self._src_common.get_one_type_to_list(item_type=item_type)
             self._type_src_list_items_dict[item_type] = src_list_items
             for src_item in src_list_items:
-                if not actual_src_space_id and self._src_config.fake_space and item_type == item_type_projects \
+                if not actual_src_space_id and self._src_config.local_source and item_type == item_type_projects \
                         and src_item.get(space_id_key):
                     actual_src_space_id = src_item.get(space_id_key)
-                    self.logger.info(f"the actual source space id is {actual_src_space_id}; the fake one is "
+                    self.logger.info(f"the actual source space id is {actual_src_space_id}; the local one is "
                                      f"{self._src_config.space_id}")
                 # TODO some items are a pure list of strings, they might be useful in the future, like variables/names
                 if isinstance(src_item, str):
@@ -527,9 +541,9 @@ class Migration:
                     self._src_tenant_variables_payload_dict[src_item.get(tenant_id_key)] = src_item
                 else:
                     log_raise_value_error(local_logger=self.logger, item=src_item, err=f"{item_type} is not valid")
-        if self._src_config.fake_space and not actual_src_space_id:
+        if self._src_config.local_source and not actual_src_space_id:
             log_raise_value_error(local_logger=self.logger,
-                                  err=f"Could not find an actual space id inside the fake space "
+                                  err=f"Could not find an actual space id inside the local source "
                                       f"{self._src_config.space_id}")
         return actual_src_space_id if actual_src_space_id else self._src_config.space_id
 
@@ -561,7 +575,7 @@ class Migration:
 
         actual_src_space_id = self._load_types()
 
-        if self._src_config.fake_space:
+        if self._src_config.local_source:
             self._src_id_vs_dst_id_dict[actual_src_space_id] = self._dst_config.space_id
         else:
             self._src_id_vs_dst_id_dict[self._src_config.space_id] = self._dst_config.space_id
@@ -572,7 +586,7 @@ class Migration:
         current_time = strftime("%Y-%m-%d-%H-%M-%S", gmtime())
         local_file = self._dst_common.get_local_single_item_file(item_name=space_map + underscore_sign + current_time,
                                                                  item_type=item_type_migration)
-        self._dst_common.log_info_print(local_logger=self.logger, msg=f"writing item id map to {local_file}...")
+        self._dst_common.log_info_print(local_logger=self.logger, msg=f"writing item id map to {local_file}")
         save_file(file_path_name=local_file, content=self._src_id_vs_dst_id_dict)
 
     def clone_space(self, item_types_comma_delimited=None):

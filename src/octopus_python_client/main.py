@@ -2,6 +2,7 @@ import argparse
 import copy
 import logging
 import os
+import sys
 
 from octopus_python_client.common import Config, item_type_deployment_processes, outer_space_download_types, \
     inside_space_download_types, deployment_process_id_key, steps_key, api_key_key, octopus_endpoint_key, \
@@ -79,7 +80,7 @@ class OctopusClient:
                             help="user_name for octopus; either api_key or user_name and password are required")
         parser.add_argument("-p", double_hyphen + password_key,
                             help="password for octopus; either api_key or user_name and password are required")
-        parser.add_argument("-sre", "--source_octopus_endpoint", help="source octopus endpoint for clone")
+        parser.add_argument("-sre", "--source_endpoint", help="source octopus endpoint for clone")
         parser.add_argument("-srn", "--source_octopus_name",
                             help="user's source octopus server name, used for folder name to store the local files")
         parser.add_argument("-srk", "--source_api_key",
@@ -90,7 +91,8 @@ class OctopusClient:
                             help="password for octopus; either api_key or user_name and password are required")
         parser.add_argument("-srs", "--source_space_id_name",
                             help="source octopus space id or name for clone/migration")
-        parser.add_argument("-fk", "--fake_space", help="if present, fake_space = True", action='store_true')
+        parser.add_argument("-lsr", "--local_source", help="if present, local_source = True; the source server/space "
+                                                           "data are stored as YAML files locally", action='store_true')
         parser.add_argument("-a", "--action", help=str(Actions.__dict__.values()), required=True)
         parser.add_argument("-ow", "--overwrite", help="if present, overwrite = True", action='store_true')
         parser.add_argument("-ns", "--no_stdout", help="if present, no_stdout = True, means no stdout",
@@ -138,10 +140,10 @@ class OctopusClient:
     def _process_args_to_configs(self):
         args = self._parse_args()
 
-        if args.octopus_endpoint:
-            self._target_config.octopus_endpoint = args.octopus_endpoint
-        assert self._target_config.octopus_endpoint.endswith("/api/"), \
-            f"octopus endpoint must end with /api/; {self._target_config.octopus_endpoint} is invalid"
+        if args.endpoint:
+            self._target_config.endpoint = args.endpoint
+        assert self._target_config.endpoint.endswith("/api/"), \
+            f"octopus endpoint must end with /api/; {self._target_config.endpoint} is invalid"
 
         if args.octopus_name:
             self._target_config.octopus_name = args.octopus_name
@@ -178,21 +180,21 @@ class OctopusClient:
             self._source_config.space_id = None
             self._source_common = Common(config=self._source_config)
 
-            if args.fake_space:
-                self._source_config.fake_space = args.fake_space
+            if args.local_source:
+                self._source_config.local_source = args.local_source
 
-            if args.source_octopus_endpoint:
-                self._source_config.octopus_endpoint = args.source_octopus_endpoint
-            assert self._source_config.fake_space or self._source_config.octopus_endpoint.endswith("/api/"), \
-                f"octopus endpoint must end with /api/; {self._source_config.octopus_endpoint} is invalid"
+            if args.source_endpoint:
+                self._source_config.endpoint = args.source_endpoint
+            assert self._source_config.local_source or self._source_config.endpoint.endswith("/api/"), \
+                f"octopus endpoint must end with /api/; {self._source_config.endpoint} is invalid"
 
             if args.source_octopus_name:
                 self._source_config.octopus_name = args.source_octopus_name
             assert self._source_config.octopus_name, "source octopus_name must not be empty"
-            if self._target_config.octopus_endpoint != self._source_config.octopus_endpoint \
+            if self._target_config.endpoint != self._source_config.endpoint \
                     and self._target_config.octopus_name == self._source_config.octopus_name:
-                raise ValueError(f"the source Octopus server {self._source_config.octopus_endpoint} and the target "
-                                 f"Octopus server {self._target_config.octopus_endpoint} cannot use the same local "
+                raise ValueError(f"the source Octopus server {self._source_config.endpoint} and the target "
+                                 f"Octopus server {self._target_config.endpoint} cannot use the same local "
                                  f"folder name {self._target_config.octopus_name}")
 
             if args.source_api_key:
@@ -208,34 +210,34 @@ class OctopusClient:
                 self._source_config.space_id = self._source_common.verify_space(space_id_name=args.source_space_id_name)
                 if self._source_config.space_id:
                     logger.info(f"The source octopus space_id is: {self._source_config.space_id}")
-                elif self._source_config.fake_space:
-                    logger.info(f"{args.action} from nonexistent source space {args.space_id_name}")
-                    self._source_config.space_id = args.space_id_name
+                elif self._source_config.local_source:
+                    logger.info(f"{args.action} from nonexistent source space {args.source_space_id_name}")
+                    self._source_config.space_id = args.source_space_id_name
                 else:
-                    raise ValueError(f"On Octopus server {self._source_config.octopus_endpoint}, the space id/name "
+                    raise ValueError(f"On Octopus server {self._source_config.endpoint}, the space id/name "
                                      f"{args.source_space_id_name} does not exist or you do not have permission to "
                                      f"access it.")
 
-            if self._source_config.octopus_endpoint == self._target_config.octopus_endpoint:
+            if self._source_config.endpoint == self._target_config.endpoint:
                 if args.action == Actions.ACTION_CLONE_SERVER:
                     raise ValueError(f"Cannot {args.action} from an endpoint to the same one: "
-                                     f"{self._source_config.octopus_endpoint}")
+                                     f"{self._source_config.endpoint}")
                 elif self._source_config.space_id == self._target_config.space_id:
                     raise ValueError(f"Cannot {args.action} from a space to the same space "
                                      f"{self._source_config.space_id} on the same Octopus server "
-                                     f"{self._source_config.octopus_endpoint}")
+                                     f"{self._source_config.endpoint}")
 
             if args.action != Actions.ACTION_CLONE_SERVER \
                     and (not self._source_config.space_id or not self._target_config.space_id):
                 raise ValueError(f"Cannot {args.action} from space {self._source_config.space_id} of the source "
-                                 f"Octopus server {self._source_config.octopus_endpoint} to space "
+                                 f"Octopus server {self._source_config.endpoint} to space "
                                  f"{self._target_config.space_id} of the target Octopus server "
-                                 f"{self._target_config.octopus_endpoint}")
+                                 f"{self._target_config.endpoint}")
 
             if input(f"Are you sure you want to {args.action} from space {self._source_config.space_id} of the source "
-                     f"Octopus server {self._source_config.octopus_endpoint} to space {self._target_config.space_id} "
-                     f"of the target Octopus server {self._target_config.octopus_endpoint} [Y/n]? ") != 'Y':
-                return
+                     f"Octopus server {self._source_config.endpoint} to space {self._target_config.space_id} "
+                     f"of the target Octopus server {self._target_config.endpoint} [Y/n]? ") != 'Y':
+                sys.exit()
 
         return args
 

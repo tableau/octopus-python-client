@@ -52,10 +52,7 @@ def call_octopus(config, url_suffix=None, operation=None, payload=None):
             response_json = ""
             if session_response.text:
                 response_json = session_response.json()
-            # if permission is denied, continue with other operations
-            if session_response.status_code == 403:
-                logger.warning(response_json)
-            elif session_response.status_code < 200 or session_response.status_code > 299:
+            if session_response.status_code < 200 or session_response.status_code > 299:
                 log_raise_value_error(local_logger=logger, err=response_json)
             return response_json
         except requests.exceptions.RequestException as e:

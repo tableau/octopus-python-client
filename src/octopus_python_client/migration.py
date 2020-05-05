@@ -1,6 +1,7 @@
 import copy
 import logging
 import re
+import sys
 from time import gmtime, strftime
 
 from octopus_python_client.common import name_key, tags_key, id_key, item_type_tag_sets, item_type_projects, Common, \
@@ -11,8 +12,11 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     item_type_channels, project_id_key, item_type_releases, item_type_artifacts, file_name_key, item_type_runbooks, \
     runbook_process_id_key, item_type_accounts, token_key, comma_sign, space_id_key, item_type_runbook_processes, \
     published_runbook_snapshot_id_key, item_type_scoped_user_roles, user_role_id_key, runbook_process_prefix, \
-    item_id_prefix_to_type_dict, positive_integer_regex, team_id_key
+    item_id_prefix_to_type_dict, positive_integer_regex, team_id_key, outer_space_clone_types, item_type_users, \
+    item_type_spaces, default_password, is_service_key, space_managers_teams, item_type_teams
 from octopus_python_client.utilities.helper import find_item, save_file, find_matched_sub_list, log_raise_value_error
+from octopus_python_client.utilities.send_requests_to_octopus import login_payload_user_name_key, \
+    login_payload_password_key
 
 
 class Migration:
@@ -22,6 +26,7 @@ class Migration:
         self._dst_config = dst_config
         self._src_common = Common(config=src_config)
         self._dst_common = Common(config=dst_config)
+        self._all_types = inside_space_download_types
         self._dst_id_payload_dict = {}
         self._dst_tenant_variables_payload_dict = {}
         self._src_id_payload_dict = {}
@@ -33,6 +38,7 @@ class Migration:
         self._type_post_func_dict = {}
         self._type_prep_func_dict = {}
         self._type_src_list_items_dict = {}
+        self._spaces_dict = {}
 
     # search the type in the space and see if the matched item already exists
     def _find_matched_dst_item_by_src_item(self, src_item_with_dst_ids, item_type):
@@ -49,25 +55,41 @@ class Migration:
         elif item_type == item_type_releases:
             match_dict = {version_key: src_item_with_dst_ids.get(version_key),
                           project_id_key: src_item_with_dst_ids.get(project_id_key)}
-        # TODO cloning scopeduserroles is not working and may not be necessary; some space id is null;
         # https://help.octopus.com/t/scopeduserrole-api-does-not-match-swagger-doc/24980
         elif item_type == item_type_scoped_user_roles:
             match_dict = {user_role_id_key: src_item_with_dst_ids.get(user_role_id_key),
                           team_id_key: src_item_with_dst_ids.get(team_id_key)}
+            if src_item_with_dst_ids.get(space_id_key):
+                match_dict[space_id_key] = src_item_with_dst_ids.get(space_id_key)
         # TODO type "artifacts" has no name and unique by Filename and ServerTaskId, so it is not cloneable
         elif item_type == item_type_artifacts:
             return find_item(lst=dst_list_items, key=file_name_key, value=src_item_with_dst_ids.get(file_name_key))
+        elif item_type == item_type_users:
+            match_dict = {login_payload_user_name_key: src_item_with_dst_ids.get(login_payload_user_name_key)}
+        elif item_type == item_type_teams and src_item_with_dst_ids.get(space_id_key):
+            match_dict = {name_key: item_name, space_id_key: src_item_with_dst_ids.get(space_id_key)}
         elif item_name:
             match_dict = {name_key: item_name}
         else:
             log_raise_value_error(local_logger=self.logger, item=src_item_with_dst_ids,
                                   err=f"{item_type} does not have name or other keys for matching!")
         matched_sub_list = find_matched_sub_list(lst=dst_list_items, match_dict=match_dict, ignore_case=True)
-        if matched_sub_list and len(matched_sub_list) > 1:
-            log_raise_value_error(local_logger=self.logger, item=matched_sub_list,
-                                  err=f"For {item_type} {item_name}, more than one item found in "
-                                      f"{self._dst_config.space_id}")
-        return matched_sub_list[0] if matched_sub_list else {}
+        if matched_sub_list:
+            if len(matched_sub_list) > 1:
+                if item_type == item_type_scoped_user_roles:
+                    self._dst_common.log_info_print(
+                        local_logger=self.logger, item=matched_sub_list,
+                        msg=f"{item_type_scoped_user_roles} could have multiple matched items in the destination space."
+                            f" They are mostly just duplicate, so just return the first matched one")
+                    return matched_sub_list[0]
+                else:
+                    log_raise_value_error(local_logger=self.logger, item=matched_sub_list,
+                                          err=f"For {item_type} {item_name}, more than one item found in "
+                                              f"{self._dst_config.space_id}")
+            else:
+                return matched_sub_list[0]
+        else:
+            return {}
 
     # For tagsets, if the destination space already have the same tagset,
     # each tag of each tagset must use the destination Tag ID not the source Tag ID,
@@ -128,6 +150,28 @@ class Migration:
             f"{self._dst_config.space_id}: popping {runbook_process_id_key}")
         src_item.pop(runbook_process_id_key, None)
         src_item.pop(published_runbook_snapshot_id_key, None)
+
+    def _prepare_space(self, src_item):
+        # self.logger.info(f"prepare {item_type_spaces} {src_item.get(name_key)} {src_item.get(id_key)} for migrating "
+        #                  f"from {self._src_config.endpoint} to {self._dst_config.endpoint} by popping "
+        #                  f"{space_managers_team_members} and {space_managers_teams}")
+        # src_item.pop(space_managers_team_members, None)
+        # src_item.pop(space_managers_teams, None)
+        self.logger.info(f"prepare {item_type_spaces} {src_item.get(name_key)} {src_item.get(id_key)} for migrating "
+                         f"from {self._src_config.endpoint} to {self._dst_config.endpoint} by removing space default "
+                         f"team in {space_managers_teams}")
+        list_team_ids = src_item.get(space_managers_teams)
+        if list_team_ids:
+            for i in range(len(list_team_ids) - 1, -1, -1):
+                if list_team_ids[i].endswith(src_item.get(id_key)):
+                    del list_team_ids[i]
+
+    def _prepare_user(self, src_item):
+        self.logger.info(f"prepare {item_type_users} {src_item.get(login_payload_user_name_key)} {src_item.get(id_key)}"
+                         f" for migrating from {self._src_config.endpoint} to {self._dst_config.space_id} by adding "
+                         f"default {login_payload_password_key} as {default_password}")
+        if not src_item.get(is_service_key):
+            src_item[login_payload_password_key] = default_password
 
     def _clone_item_to_space(self, item_type, item_name=None, item_id=None):
         item_badge = item_name if item_name else item_id
@@ -227,7 +271,11 @@ class Migration:
         else:
             self.logger.info(f"destination space {self._dst_config.space_id} does not have {item_type} {src_item_name} "
                              f"{src_id_value} from space {self._src_config.space_id}, so creating it...")
-            dst_item = self._dst_common.post_single_item(item_type=item_type, payload=src_item_copy)
+            # ignore error and continue to process other items
+            try:
+                dst_item = self._dst_common.post_single_item(item_type=item_type, payload=src_item_copy)
+            except Exception as err:
+                self._dst_common.log_warn_print(local_logger=self.logger, msg=err)
             self._dst_common.log_info_print(
                 local_logger=self.logger,
                 msg=f"{item_type} {src_item_name} {src_id_value} in space {self._src_config.space_id} was cloned "
@@ -236,6 +284,8 @@ class Migration:
         dst_id_value = dst_item.get(id_key)
         self.logger.info(f"add the id pair ({src_id_value}, {dst_id_value}) to the id map")
         self._src_id_vs_dst_id_dict[src_id_value] = dst_id_value
+        if item_type == item_type_spaces:
+            self._spaces_dict[src_id_value] = dst_id_value
         self._dst_id_payload_dict[dst_id_value] = dst_item
 
         post_process = self._type_post_func_dict.get(item_type)
@@ -496,7 +546,11 @@ class Migration:
             dst_tag_set = copy.deepcopy(src_tag_set)
             dst_tag_set.pop(id_key, None)
             dst_tag_set[tags_key] = [src_tag_copy]
-            dst_tag_set = self._dst_common.post_single_item(item_type=item_type_tag_sets, payload=dst_tag_set)
+            # ignore error and continue to process other items
+            try:
+                dst_tag_set = self._dst_common.post_single_item(item_type=item_type_tag_sets, payload=dst_tag_set)
+            except Exception as err:
+                self._dst_common.log_warn_print(local_logger=self.logger, msg=err)
         self._src_id_vs_dst_id_dict[item_id] = item_id
         self._dst_id_payload_dict[item_id] = find_item(lst=dst_tag_set.get(tags_key), key=canonical_tag_name_key,
                                                        value=item_id)
@@ -506,13 +560,13 @@ class Migration:
         if self._src_config.local_source:
             self._dst_common.log_info_print(
                 local_logger=self.logger,
-                msg=f"Reading files {inside_space_download_types} from local source {self._src_config.space_id}...")
+                msg=f"Reading files {self._all_types} from local source {self._src_config.space_id}...")
         else:
             self._dst_common.log_info_print(
                 local_logger=self.logger,
-                msg=f"Downloading {inside_space_download_types} from space {self._src_config.space_id}...")
+                msg=f"Downloading {self._all_types} from space {self._src_config.space_id}...")
         actual_src_space_id = None
-        for item_type in inside_space_download_types:
+        for item_type in self._all_types:
             self._dst_common.log_info_print(local_logger=self.logger,
                                             msg=f"loading type {item_type} from space {self._src_config.space_id}")
             # for cloning space from another Octopus server
@@ -524,23 +578,29 @@ class Migration:
             else:
                 self.logger.info(f"Loading {item_type} from source space {self._src_config.space_id}...")
                 src_list_items = self._src_common.get_one_type_to_list(item_type=item_type)
-            self._type_src_list_items_dict[item_type] = src_list_items
+            selected_src_list_items = []
             for src_item in src_list_items:
                 if not actual_src_space_id and self._src_config.local_source and item_type == item_type_projects \
                         and src_item.get(space_id_key):
                     actual_src_space_id = src_item.get(space_id_key)
                     self.logger.info(f"the actual source space id is {actual_src_space_id}; the local one is "
                                      f"{self._src_config.space_id}")
+                if not self._src_config.space_id and src_item.get(space_id_key) \
+                        or item_type == item_type_scoped_user_roles \
+                        and self._src_config.space_id != src_item.get(space_id_key):
+                    continue
                 # TODO some items are a pure list of strings, they might be useful in the future, like variables/names
                 if isinstance(src_item, str):
                     self.logger.warning(f"{item_type} {src_item} is ignored when loading")
                 elif isinstance(src_item, dict) and src_item.get(id_key):
                     self._src_id_payload_dict[src_item.get(id_key)] = src_item
                     self._src_id_type_dict[src_item.get(id_key)] = item_type
+                    selected_src_list_items.append(src_item)
                 elif isinstance(src_item, dict) and src_item.get(tenant_id_key):
                     self._src_tenant_variables_payload_dict[src_item.get(tenant_id_key)] = src_item
                 else:
                     log_raise_value_error(local_logger=self.logger, item=src_item, err=f"{item_type} is not valid")
+            self._type_src_list_items_dict[item_type] = selected_src_list_items
         if self._src_config.local_source and not actual_src_space_id:
             log_raise_value_error(local_logger=self.logger,
                                   err=f"Could not find an actual space id inside the local source "
@@ -559,17 +619,19 @@ class Migration:
     def _initialize_maps(self):
         self._dst_common.log_info_print(local_logger=self.logger,
                                         msg=f"initialize the map")
-        self._type_prep_func_dict[item_type_tag_sets] = self._prepare_tag_set
-        self._type_prep_func_dict[item_type_projects] = self._prepare_project
-        self._type_prep_func_dict[item_type_library_variable_sets] = self._prepare_library_variable_set
-        self._type_prep_func_dict[item_type_feeds] = self._prepare_feed
-        self._type_prep_func_dict[item_type_runbooks] = self._prepare_runbook
         self._type_prep_func_dict[item_type_accounts] = self._prepare_account
+        self._type_prep_func_dict[item_type_feeds] = self._prepare_feed
+        self._type_prep_func_dict[item_type_library_variable_sets] = self._prepare_library_variable_set
+        self._type_prep_func_dict[item_type_projects] = self._prepare_project
+        self._type_prep_func_dict[item_type_runbooks] = self._prepare_runbook
+        self._type_prep_func_dict[item_type_spaces] = self._prepare_space
+        self._type_prep_func_dict[item_type_tag_sets] = self._prepare_tag_set
+        self._type_prep_func_dict[item_type_users] = self._prepare_user
 
-        self._type_post_func_dict[item_type_projects] = self._post_process_project
         self._type_post_func_dict[item_type_library_variable_sets] = self._post_process_library_variable_set
-        self._type_post_func_dict[item_type_tenants] = self._post_process_tenant_variables
+        self._type_post_func_dict[item_type_projects] = self._post_process_project
         self._type_post_func_dict[item_type_runbooks] = self._post_process_runbook
+        self._type_post_func_dict[item_type_tenants] = self._post_process_tenant_variables
 
         self._type_full_func_dict[item_type_tags] = self._full_process_tags
 
@@ -580,7 +642,8 @@ class Migration:
         else:
             self._src_id_vs_dst_id_dict[self._src_config.space_id] = self._dst_config.space_id
 
-        self._prep_tag_sets()
+        if item_type_tags in self._all_types:
+            self._prep_tag_sets()
 
     def _save_space_map(self):
         current_time = strftime("%Y-%m-%d-%H-%M-%S", gmtime())
@@ -596,13 +659,14 @@ class Migration:
             process_types = inside_space_clone_types
         self._dst_common.log_info_print(
             local_logger=self.logger,
-            msg=f"cloning {process_types} from {self._src_config.space_id} to {self._dst_config.space_id}...")
+            msg=f"cloning types {process_types} from {self._src_config.space_id} on server {self._src_config.endpoint}"
+                f" to {self._dst_config.space_id} on server {self._dst_config.endpoint}")
         if not self._dst_config.overwrite:
             self._dst_config.overwrite = input(
-                f"You are cloning {process_types} from {self._src_config.space_id} to {self._dst_config.space_id}; "
-                f"Some entities may already exist in {self._dst_config.space_id}; "
-                f"Do you want to overwrite the existing entities? "
+                f"Some entities may already exist in {self._dst_config.space_id} on server {self._dst_config.endpoint};"
+                f" Do you want to overwrite the existing entities? "
                 f"If no, we will skip the existing entities. [Y/n]: ") == 'Y'
+        self._all_types = inside_space_download_types
         self._initialize_maps()
         for item_type in process_types:
             if item_type in inside_space_clone_types:
@@ -613,18 +677,51 @@ class Migration:
         item_badge = item_name if item_name else item_id
         self._dst_common.log_info_print(
             local_logger=self.logger,
-            msg=f"cloning {item_type} {item_badge} from {self._src_config.space_id} to {self._dst_config.space_id}...")
+            msg=f"cloning {item_type} {item_badge} from {self._src_config.space_id} on server "
+                f"{self._src_config.endpoint} to {self._dst_config.space_id} on server {self._dst_config.endpoint}")
         if not self._src_config.overwrite:
             self._src_config.overwrite = input(
-                f"You are cloning {item_type} {item_badge} from {self._src_config.space_id} to "
-                f"{self._dst_config.space_id}; Some entities may already exist in {self._dst_config.space_id}; "
-                f"Do you want to overwrite the existing entities? "
+                f"Some entities may already exist in {self._dst_config.space_id} on server {self._dst_config.endpoint};"
+                f" Do you want to overwrite the existing entities? "
                 f"If no, we will skip the existing entities. [Y/n]: ") == 'Y'
+        self._all_types = inside_space_download_types
         self._initialize_maps()
         if item_type in inside_space_clone_types:
             self._clone_item_to_space(item_type=item_type, item_name=item_name, item_id=item_id)
         self._save_space_map()
 
-    # TODO finish it
-    def clone_server(self, item_types_comma_delimited=None):
-        pass
+    def clone_server(self, space_id_or_name_comma_delimited=None, item_types_comma_delimited=None):
+        list_space_ids = self._src_common.get_list_spaces_ids_sorted(
+            space_id_or_name_comma_delimited=space_id_or_name_comma_delimited)
+        self._dst_common.log_info_print(
+            local_logger=self.logger,
+            msg=f"cloning outer space and {list_space_ids} for item types {item_types_comma_delimited} from server "
+                f"{self._src_config.endpoint} to server {self._dst_config.endpoint}")
+
+        if input(f"Are you sure you want to clone server to server? If yes, your permission on the destination "
+                 f"server could be overwritten and revoked (default password is {default_password} [Y/n]: ") != 'Y':
+            sys.exit()
+
+        if not self._dst_config.overwrite:
+            self._dst_config.overwrite = input(
+                f"Some entities may already exist in server {self._dst_config.endpoint}; "
+                f"Do you want to overwrite the existing entities? "
+                f"If no, we will skip the existing entities. [Y/n]: ") == 'Y'
+
+        # outer space
+        self._all_types = outer_space_clone_types
+        self._initialize_maps()
+        for item_type in outer_space_clone_types:
+            self._clone_type_to_space(item_type=item_type)
+        self._dst_common.log_info_print(item=self._spaces_dict,
+                                        msg=f"see log for space id map from source server to dest server")
+
+        # inside space
+        for src_space_id in list_space_ids:
+            dst_space_id = self._spaces_dict.get(src_space_id)
+            self._dst_common.log_info_print(msg=f"clone {src_space_id} on server {self._src_config.endpoint} to "
+                                                f"{dst_space_id} on server {self._dst_config.endpoint}")
+            self._src_config.space_id = src_space_id
+            self._dst_config.space_id = dst_space_id
+            self.clone_space(item_types_comma_delimited=item_types_comma_delimited)
+        self._save_space_map()

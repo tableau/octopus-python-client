@@ -14,6 +14,7 @@ all_underscore = "all_"
 error_message_key = "ErrorMessage"
 error_message_resource_not_found = "The resource you requested was not found."
 comma_sign = ","
+default_password = "Octopus2020!"
 dot_sign = "."
 double_hyphen = "--"
 environments_prefix = "Environments"
@@ -53,6 +54,7 @@ feed_id_key = "FeedId"
 file_name_key = "Filename"
 id_key = 'Id'
 included_library_variable_set_ids_key = "IncludedLibraryVariableSetIds"
+is_service_key = "IsService"
 items_key = 'Items'
 latest_commit_sha_key = "latest_commit_sha"
 life_cycle_id_key = "LifecycleId"
@@ -83,6 +85,8 @@ sha_key = "SHA"
 state_key = "State"
 steps_key = 'Steps'
 space_id_key = "SpaceId"
+space_managers_team_members = "SpaceManagersTeamMembers"
+space_managers_teams = "SpaceManagersTeams"
 tags_key = "Tags"
 task_id_key = "TaskId"
 team_id_key = "TeamId"
@@ -183,11 +187,11 @@ inside_space_level_types = \
     [[item_type_environments, item_type_feeds, item_type_machine_policies, item_type_proxies, item_type_tag_sets,
       item_type_worker_pools],
      [item_type_action_templates, item_type_library_variable_sets, item_type_life_cycles, item_type_project_groups,
-      item_type_teams, item_type_workers],
+      item_type_workers],  # item_type_teams,
      [item_type_projects],
      [item_type_channels, item_type_runbooks, item_type_tenants],
      [item_type_accounts, item_type_build_information, item_type_certificates, item_type_dashboard_configuration,
-      item_type_machines, item_type_project_triggers, item_type_subscriptions]]
+      item_type_machines, item_type_project_triggers, item_type_subscriptions]]  # , item_type_scoped_user_roles
 
 # these types are the child type of another type
 inside_space_child_types = [item_type_deployment_processes, item_type_runbook_processes]
@@ -211,12 +215,15 @@ inside_space_download_types = inside_space_clone_types + inside_space_child_type
 inside_space_download_types.sort()
 
 # the types live outside space (Octopus server types)
-# TODO clone the outer space
+# clone the outer space; this could disable the administrator's permission on the destination server
 outer_space_level_types = \
-    [[item_type_spaces],
-     [item_type_users, item_type_user_roles],
+    [[item_type_users, item_type_user_roles],
      [item_type_teams],
+     [item_type_spaces],
      [item_type_scoped_user_roles]]
+
+# the cloneable types which is the flattened outer_space_level_types and the order is maintained
+outer_space_clone_types = sum(outer_space_level_types, [])
 
 outer_space_download_types = \
     ["authentication", "configuration/certificates", "communityactiontemplates", "externalsecuritygroupproviders",
@@ -278,6 +285,15 @@ class Common:
         if not local_logger:
             local_logger = self.logger
         local_logger.warning(msg)
+        if not self.config.no_stdout:
+            print(msg)
+        if item:
+            local_logger.info(pformat(item))
+
+    def log_error_print(self, msg, local_logger=None, item=None):
+        if not local_logger:
+            local_logger = self.logger
+        local_logger.error(msg)
         if not self.config.no_stdout:
             print(msg)
         if item:
@@ -409,9 +425,9 @@ class Common:
             else:
                 url_suffix = space_url + item_type + url_all_pages
                 return call_octopus(config=self.config, url_suffix=url_suffix)
-        except ValueError as err:
+        except Exception as err:
             # TODO bug https://help.octopus.com/t/504-gateway-time-out-on-getting-all-variables/24732
-            self.logger.error(err)
+            self.log_error_print(msg=err)
             return {}
 
     # get extended types like /api/users/{id}/permissions
@@ -509,23 +525,30 @@ class Common:
         for item_type in list_item_types:
             self.get_one_type_save(item_type=item_type)
 
-    def get_spaces_save(self, space_id_or_name_comma_delimited=None, item_types_comma_delimited=None):
+    def get_list_spaces_ids_sorted(self, space_id_or_name_comma_delimited=None):
         if space_id_or_name_comma_delimited:
             list_space_ids_or_names = space_id_or_name_comma_delimited.split(comma_sign)
             list_space_ids = [self.verify_space(space_id_name=space_id_or_name) for space_id_or_name in
                               list_space_ids_or_names]
         else:
-            list_space_ids = self.get_list_ids_one_type(item_type=item_type_spaces) + [None]
-        list_space_ids_set = set(list_space_ids)
+            list_space_ids = self.get_list_ids_one_type(item_type=item_type_spaces)
+        return sorted(list(set(list_space_ids)))
+
+    def get_spaces_save(self, space_id_or_name_comma_delimited=None, item_types_comma_delimited=None):
+        list_space_ids_sorted = self.get_list_spaces_ids_sorted(
+            space_id_or_name_comma_delimited=space_id_or_name_comma_delimited)
+        # if user does not specify the spaces, we also download the outer space for user
+        if not space_id_or_name_comma_delimited:
+            list_space_ids_sorted = [None] + list_space_ids_sorted
         if self.config.overwrite:
-            self.logger.info(f"===== You are downloading spaces {list_space_ids_set}... =====")
+            self.logger.info(f"===== You are downloading spaces {list_space_ids_sorted}... =====")
         else:
             self.config.overwrite = \
-                input(f"===== You are downloading spaces {list_space_ids_set}; "
+                input(f"===== You are downloading spaces {list_space_ids_sorted}; "
                       f"Some entities may already be downloaded locally; "
                       f"Do you want to overwrite all local existing entities? "
                       f"If no, you will be asked to overwrite or not for each type respectively. [Y/n]: ") == 'Y'
-        for space_id in list_space_ids_set:
+        for space_id in list_space_ids_sorted:
             self.config.space_id = space_id
             self.get_types_save(item_types_comma_delimited=item_types_comma_delimited)
 

@@ -1,8 +1,6 @@
 import argparse
-import copy
 import logging
 import os
-import sys
 
 from octopus_python_client.common import Config, item_type_deployment_processes, outer_space_download_types, \
     inside_space_download_types, deployment_process_id_key, steps_key, api_key_key, octopus_endpoint_key, \
@@ -57,13 +55,13 @@ class Actions:
 
 
 class OctopusClient:
-    CLONE_ACTIONS_SET = {Actions.ACTION_CLONE_SPACE_ITEM, Actions.ACTION_CLONE_SPACE}
+    CLONE_ACTIONS_SET = {Actions.ACTION_CLONE_SPACE_ITEM, Actions.ACTION_CLONE_SPACE, Actions.ACTION_CLONE_SERVER}
 
     def __init__(self):
         self._target_config = Config()
         self._target_common = Common(config=self._target_config)
-        self._source_config = None
-        self._source_common = None
+        self._source_config = Config()
+        self._source_common = Common(config=self._source_config)
 
     @staticmethod
     def _parse_args():
@@ -175,20 +173,20 @@ class OctopusClient:
             return
 
         if args.action in OctopusClient.CLONE_ACTIONS_SET:
-            logger.info(f"===== Action: {args.action}; processing the source config =====")
-            self._source_config = copy.deepcopy(self._target_config)
-            self._source_config.space_id = None
-            self._source_common = Common(config=self._source_config)
+            self._target_common.log_info_print(msg=f"===== Action: {args.action}; processing the source config =====")
 
             if args.local_source:
                 self._source_config.local_source = args.local_source
-
-            if args.source_endpoint:
+            if not args.source_endpoint or args.source_endpoint == self._target_config.endpoint:
+                self._source_config.endpoint = self._target_config.endpoint
+            else:
                 self._source_config.endpoint = args.source_endpoint
             assert self._source_config.local_source or self._source_config.endpoint.endswith("/api/"), \
                 f"octopus endpoint must end with /api/; {self._source_config.endpoint} is invalid"
 
-            if args.source_octopus_name:
+            if not args.source_octopus_name or args.source_octopus_name == self._target_config.octopus_name:
+                self._source_config.octopus_name = self._target_config.octopus_name
+            else:
                 self._source_config.octopus_name = args.source_octopus_name
             assert self._source_config.octopus_name, "source octopus_name must not be empty"
             if self._target_config.endpoint != self._source_config.endpoint \
@@ -209,9 +207,11 @@ class OctopusClient:
             if args.source_space_id_name:
                 self._source_config.space_id = self._source_common.verify_space(space_id_name=args.source_space_id_name)
                 if self._source_config.space_id:
-                    logger.info(f"The source octopus space_id is: {self._source_config.space_id}")
+                    self._target_common.log_info_print(msg=f"The source octopus space_id is: "
+                                                           f"{self._source_config.space_id}")
                 elif self._source_config.local_source:
-                    logger.info(f"{args.action} from nonexistent source space {args.source_space_id_name}")
+                    self._target_common.log_info_print(msg=f"{args.action} from nonexistent source space "
+                                                           f"{args.source_space_id_name}")
                     self._source_config.space_id = args.source_space_id_name
                 else:
                     raise ValueError(f"On Octopus server {self._source_config.endpoint}, the space id/name "
@@ -227,17 +227,16 @@ class OctopusClient:
                                      f"{self._source_config.space_id} on the same Octopus server "
                                      f"{self._source_config.endpoint}")
 
-            if args.action != Actions.ACTION_CLONE_SERVER \
-                    and (not self._source_config.space_id or not self._target_config.space_id):
+            if args.action == Actions.ACTION_CLONE_SERVER:
+                self._target_common.log_info_print(msg=f"{args.action} from {self._source_config.endpoint} to "
+                                                       f"{self._target_config.endpoint}; space ids are cleared")
+                self._source_config.space_id = None
+                self._target_config.space_id = None
+            elif not self._source_config.space_id or not self._target_config.space_id:
                 raise ValueError(f"Cannot {args.action} from space {self._source_config.space_id} of the source "
                                  f"Octopus server {self._source_config.endpoint} to space "
                                  f"{self._target_config.space_id} of the target Octopus server "
                                  f"{self._target_config.endpoint}")
-
-            if input(f"Are you sure you want to {args.action} from space {self._source_config.space_id} of the source "
-                     f"Octopus server {self._source_config.endpoint} to space {self._target_config.space_id} "
-                     f"of the target Octopus server {self._target_config.endpoint} [Y/n]? ") != 'Y':
-                sys.exit()
 
         return args
 
@@ -303,7 +302,7 @@ class OctopusClient:
                 project_literal_name=args.project_name, remove_suffix=args.remove_suffix, add_suffix=args.add_suffix)
         elif args.action == Actions.ACTION_CLONE_SERVER:
             Migration(src_config=self._source_config, dst_config=self._target_config).clone_server(
-                item_types_comma_delimited=args.item_types)
+                space_id_or_name_comma_delimited=args.spaces, item_types_comma_delimited=args.item_types)
         elif args.action == Actions.ACTION_CLONE_SPACE:
             Migration(src_config=self._source_config, dst_config=self._target_config).clone_space(
                 item_types_comma_delimited=args.item_types)

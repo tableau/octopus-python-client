@@ -10,8 +10,8 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     item_type_tenant_variables, canonical_tag_name_key, item_type_tags, tenant_id_key, item_type_migration, space_map, \
     item_type_tenants, slash_sign, underscore_sign, item_type_feeds, secret_key_key, new_value_key, hyphen_sign, \
     item_type_channels, project_id_key, item_type_releases, item_type_artifacts, file_name_key, item_type_runbooks, \
-    runbook_process_id_key, item_type_accounts, token_key, comma_sign, space_id_key, item_type_runbook_processes, \
-    published_runbook_snapshot_id_key, item_type_scoped_user_roles, user_role_id_key, runbook_process_prefix, \
+    runbook_process_id_key, item_type_accounts, token_key, comma_sign, space_id_key, published_runbook_snapshot_id_key, \
+    item_type_scoped_user_roles, user_role_id_key, runbook_process_prefix, \
     item_id_prefix_to_type_dict, positive_integer_regex, team_id_key, outer_space_clone_types, item_type_users, \
     item_type_spaces, default_password, is_service_key, space_managers_teams, item_type_teams
 from octopus_python_client.utilities.helper import find_item, save_file, find_matched_sub_list, log_raise_value_error
@@ -126,21 +126,25 @@ class Migration:
                          f"{self._dst_config.space_id}")
         src_item.pop(variable_set_id_key, None)
 
+    def _replace_secrets(self, src_item):
+        if secret_key_key in src_item and not src_item.get(secret_key_key).get(new_value_key):
+            src_item.get(secret_key_key)[new_value_key] = default_password
+            self.logger.info(f"assigned a placeholder {default_password} to {new_value_key} for {secret_key_key}")
+        if token_key in src_item and not src_item.get(token_key).get(new_value_key):
+            src_item.get(token_key)[new_value_key] = default_password
+            self.logger.info(f"assigned a placeholder {default_password} to {new_value_key} for {token_key}")
+
     # SecretKey: NewValue: null; must be replaced by a placeholder string
     def _prepare_feed(self, src_item):
         self.logger.info(
             f"prepare {item_type_feeds} {src_item.get(name_key)} for migrating to {self._dst_config.space_id}")
-        if secret_key_key in src_item and not src_item.get(secret_key_key).get(new_value_key):
-            src_item.get(secret_key_key)[new_value_key] = hyphen_sign
-            self.logger.info(f"assigned a placeholder {hyphen_sign} to {new_value_key} for {secret_key_key}")
+        self._replace_secrets(src_item=src_item)
 
     # Token: NewValue: null; must be replaced by a placeholder string
     def _prepare_account(self, src_item):
         self.logger.info(
             f"prepare {item_type_accounts} {src_item.get(name_key)} for migrating to {self._dst_config.space_id}")
-        if token_key in src_item and not src_item.get(token_key).get(new_value_key):
-            src_item.get(token_key)[new_value_key] = hyphen_sign
-            self.logger.info(f"assigned a placeholder {hyphen_sign} to {new_value_key} for {token_key}")
+        self._replace_secrets(src_item=src_item)
 
     # runbook is a new type introduced in Octopus 2019.11; the older Octopus server may not support it
     # Need to upgrade Octopus server to the latest version
@@ -263,7 +267,7 @@ class Migration:
                 try:
                     dst_item = self._dst_common.put_single_item(item_type=item_type, payload=src_item_copy)
                 except Exception as err:
-                    self._dst_common.log_warn_print(local_logger=self.logger, msg=err)
+                    self._dst_common.log_error_print(local_logger=self.logger, msg=err)
             else:
                 self._dst_common.log_info_print(local_logger=self.logger,
                                                 msg=f"{self._dst_config.space_id} already has {item_type} "
@@ -275,7 +279,7 @@ class Migration:
             try:
                 dst_item = self._dst_common.post_single_item(item_type=item_type, payload=src_item_copy)
             except Exception as err:
-                self._dst_common.log_warn_print(local_logger=self.logger, msg=err)
+                self._dst_common.log_error_print(local_logger=self.logger, msg=err)
             self._dst_common.log_info_print(
                 local_logger=self.logger,
                 msg=f"{item_type} {src_item_name} {src_id_value} in space {self._src_config.space_id} was cloned "
@@ -413,7 +417,12 @@ class Migration:
             pass
             # self.logger.info(f"the type is {type(dict_list)} and value is {dict_list}; skip it")
 
-    def _clone_child(self, src_parent_id, dst_parent_id, child_type, child_id_key):
+    # TODO dst_child_type should be the same as src_child_type, however
+    # Octopus demo site bug: https://demo.octopus.com/api/runbookprocess
+    # newer site uses https://server/api/runbookprocesses (runbookprocess vs runbookprocesses)
+    def _clone_child(self, src_parent_id, dst_parent_id, dst_child_type, child_id_key, src_child_type=None):
+        if not src_child_type:
+            src_child_type = dst_child_type
         # source item
         parent_type = self._src_id_type_dict.get(src_parent_id)
         src_parent = self._src_id_payload_dict.get(src_parent_id)
@@ -429,13 +438,21 @@ class Migration:
             f"clone {parent_type} {parent_name}'s {child_id_key} {src_child_id} from {self._src_config.space_id} to "
             f"{self._dst_config.space_id}")
         src_child = self._src_id_payload_dict.get(src_child_id)
-        # TODO Octopus bug https://help.octopus.com/t/504-gateway-time-out-on-getting-all-variables/24732
-        if not src_child:
-            self.logger.warning(
-                f"{src_child_id} does not exist in the memory, so get it from {self._src_config.space_id}")
-            src_child = self._src_common.get_single_item_by_name_or_id(item_type=child_type, item_id=src_child_id)
-            self._src_id_payload_dict[src_child_id] = src_child
-        dst_child = self._dst_common.get_or_delete_single_item_by_id(item_type=child_type, item_id=dst_child_id)
+
+        # ignore cloning child error due to permission and other misc issues
+        try:
+            # TODO Octopus bug https://help.octopus.com/t/504-gateway-time-out-on-getting-all-variables/24732
+            if not src_child:
+                self.logger.warning(
+                    f"{src_child_id} does not exist in the memory, so get it from {self._src_config.space_id}")
+                src_child = self._src_common.get_single_item_by_name_or_id(item_type=src_child_type,
+                                                                           item_id=src_child_id)
+                self._src_id_payload_dict[src_child_id] = src_child
+            dst_child = self._dst_common.get_single_item_by_name_or_id(item_type=dst_child_type, item_id=dst_child_id)
+        except Exception as err:
+            self._dst_common.log_error_print(local_logger=self.logger, msg=err)
+            return dst_child_id
+
         src_child_copy = copy.deepcopy(src_child)
 
         # TODO ScopeValues seems redundant in variables; ScopeValues defines a general scope to be used for variable set
@@ -452,9 +469,9 @@ class Migration:
 
         # sometimes, overwrite may not be successful due to different reasons, we can skip in most cases
         try:
-            dst_child = self._dst_common.put_single_item(item_type=child_type, payload=src_child_copy)
+            dst_child = self._dst_common.put_single_item(item_type=dst_child_type, payload=src_child_copy)
         except Exception as err:
-            self._dst_common.log_warn_print(local_logger=self.logger, msg=err)
+            self._dst_common.log_error_print(local_logger=self.logger, msg=err)
 
         self._dst_id_payload_dict[dst_child_id] = dst_child
         return dst_child_id
@@ -468,13 +485,13 @@ class Migration:
             local_logger=self.logger,
             msg=f"clone {item_type_deployment_processes} from {item_type_projects} {src_id} in "
                 f"{self._src_config.space_id} to {dst_id} in {self._dst_config.space_id}")
-        self._clone_child(src_parent_id=src_id, dst_parent_id=dst_id, child_type=item_type_deployment_processes,
+        self._clone_child(src_parent_id=src_id, dst_parent_id=dst_id, dst_child_type=item_type_deployment_processes,
                           child_id_key=deployment_process_id_key)
         self._dst_common.log_info_print(
             local_logger=self.logger,
             msg=f"clone {item_type_variables} from {item_type_projects} {src_id} in {self._src_config.space_id} "
                 f"to {dst_id} in {self._dst_config.space_id}")
-        self._clone_child(src_parent_id=src_id, dst_parent_id=dst_id, child_type=item_type_variables,
+        self._clone_child(src_parent_id=src_id, dst_parent_id=dst_id, dst_child_type=item_type_variables,
                           child_id_key=variable_set_id_key)
 
     def _post_process_library_variable_set(self, src_id, dst_id):
@@ -482,16 +499,17 @@ class Migration:
             local_logger=self.logger,
             msg=f"clone {item_type_variables} from {item_type_library_variable_sets} {src_id} in "
                 f"{self._src_config.space_id} to {dst_id} in {self._dst_config.space_id}")
-        self._clone_child(src_parent_id=src_id, dst_parent_id=dst_id, child_type=item_type_variables,
+        self._clone_child(src_parent_id=src_id, dst_parent_id=dst_id, dst_child_type=item_type_variables,
                           child_id_key=variable_set_id_key)
 
-    def _post_process_runbook(self, src_id, dst_id):
+    def _post_process_runbook(self, src_id, dst_id, item_type_runbook_processes=None):
         self._dst_common.log_info_print(
             local_logger=self.logger,
             msg=f"clone {item_type_runbook_processes} from {item_type_runbooks} {src_id} in "
                 f"{self._src_config.space_id} to {dst_id} in {self._dst_config.space_id}")
-        self._clone_child(src_parent_id=src_id, dst_parent_id=dst_id, child_type=item_type_runbook_processes,
-                          child_id_key=runbook_process_id_key)
+        self._clone_child(src_parent_id=src_id, dst_parent_id=dst_id, child_id_key=runbook_process_id_key,
+                          dst_child_type=self._dst_config.item_type_runbook_processes,
+                          src_child_type=self._src_config.item_type_runbook_processes)
 
     # tenant variables is special and its id is also tenant id, such as "Tenants-401"
     # so you have to use a separate map to store the tenants variables
@@ -511,7 +529,7 @@ class Migration:
                 self._dst_common.put_post_tenant_variables(tenant_id=dst_id, tenant_variables=src_tenant_variables_copy)
         except Exception as err:
             dst_tenant_variables = self._dst_common.get_tenant_variables(tenant_id=dst_id)
-            self._dst_common.log_warn_print(local_logger=self.logger, msg=err)
+            self._dst_common.log_error_print(local_logger=self.logger, msg=err)
 
         self._dst_tenant_variables_payload_dict[dst_id] = dst_tenant_variables
 
@@ -550,7 +568,7 @@ class Migration:
             try:
                 dst_tag_set = self._dst_common.post_single_item(item_type=item_type_tag_sets, payload=dst_tag_set)
             except Exception as err:
-                self._dst_common.log_warn_print(local_logger=self.logger, msg=err)
+                self._dst_common.log_error_print(local_logger=self.logger, msg=err)
         self._src_id_vs_dst_id_dict[item_id] = item_id
         self._dst_id_payload_dict[item_id] = find_item(lst=dst_tag_set.get(tags_key), key=canonical_tag_name_key,
                                                        value=item_id)

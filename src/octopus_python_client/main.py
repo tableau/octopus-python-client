@@ -4,7 +4,7 @@ import os
 
 from octopus_python_client.common import Config, item_type_deployment_processes, outer_space_download_types, \
     inside_space_download_types, deployment_process_id_key, steps_key, api_key_key, octopus_endpoint_key, \
-    octopus_name_key, user_name_key, password_key, double_hyphen, Common
+    octopus_name_key, user_name_key, password_key, double_hyphen, Common, runbook_process_prefix, octopus_demo_site
 from octopus_python_client.deployment_processes import DeploymentProcesses
 from octopus_python_client.migration import Migration
 from octopus_python_client.projects import Projects
@@ -167,7 +167,7 @@ class OctopusClient:
                 logger.info(f"the target space_id is: {self._target_config.space_id}")
             else:
                 raise ValueError(f"the space id/name {args.space_id_name} you specified does not exist or "
-                                 f"you do not have permission to access it")
+                                 f"you do not have permission to access it on server {self._target_config.endpoint}")
         elif args.action != Actions.ACTION_GET_SPACES \
                 and input(f"Are you sure you want to run a command against {None} space [Y/n]? ") != 'Y':
             return
@@ -183,6 +183,11 @@ class OctopusClient:
                 self._source_config.endpoint = args.source_endpoint
             assert self._source_config.local_source or self._source_config.endpoint.endswith("/api/"), \
                 f"octopus endpoint must end with /api/; {self._source_config.endpoint} is invalid"
+
+            # TODO Octopus demo site bug: https://demo.octopus.com/api/runbookprocess
+            # newer site uses https://server/api/runbookprocesses (runbookprocess vs runbookprocesses)
+            if octopus_demo_site == self._source_config.endpoint:
+                self._source_config.item_type_runbook_processes = runbook_process_prefix
 
             if not args.source_octopus_name or args.source_octopus_name == self._target_config.octopus_name:
                 self._source_config.octopus_name = self._target_config.octopus_name

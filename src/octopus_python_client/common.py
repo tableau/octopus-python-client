@@ -24,6 +24,8 @@ folder_outer_spaces = "outer_spaces"
 folder_configurations = "configurations"
 hyphen_sign = "-"
 newline_sign = "\n"
+octopus_demo_site = "https://demo.octopusdeploy.com/api/"
+positive_integer_regex = "-[1-9][0-9]*$"
 runbook_process_prefix = "RunbookProcess"
 slash_all = "/all"
 slash_sign = "/"
@@ -33,7 +35,6 @@ tenants_prefix = "Tenants"
 underscore_sign = "_"
 url_all_pages = "?skip=0&take=2147483647"
 yaml_ext = ".yaml"
-positive_integer_regex = "-[1-9][0-9]*$"
 
 # dict keys
 action_name_key = "ActionName"
@@ -251,6 +252,8 @@ class Config:
         self.no_stdout = False
         self.local_source = False
         self.current_path = None
+        # TODO Octopus demo site bug:
+        self.item_type_runbook_processes = item_type_runbook_processes
         self.get_config()
 
     def get_config(self):

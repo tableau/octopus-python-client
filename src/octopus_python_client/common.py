@@ -252,6 +252,7 @@ class Config:
         self.no_stdout = False
         self.local_source = False
         self.current_path = None
+        self.pem = False
         # TODO Octopus demo site bug:
         self.item_type_runbook_processes = item_type_runbook_processes
         self.get_config()
@@ -314,7 +315,8 @@ class Common:
         return [item.get(id_key) for item in list_items]
 
     def verify_space(self, space_id_name):
-        list_spaces = self.get_one_type_to_list(item_type=item_type_spaces)
+        all_spaces = self.request_octopus_item(address=item_type_spaces)
+        list_spaces = self.get_list_items_from_all_items(all_items=all_spaces)
         space = find_item(lst=list_spaces, key=id_key, value=space_id_name)
         if space:
             return space.get(id_key)

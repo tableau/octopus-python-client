@@ -1,6 +1,5 @@
 import json
 import logging
-import sys
 from types import SimpleNamespace
 
 import requests
@@ -32,19 +31,19 @@ def call_octopus(config, url_suffix=None, operation=None, payload=None):
             headers = {content_type_key: application_json}
             login_url = config.endpoint + users_login_url_suffix
             login_payload = {login_payload_user_name_key: config.user_name, login_payload_password_key: config.password}
-            session.post(login_url, json=login_payload, headers=headers)
+            session.post(login_url, json=login_payload, headers=headers, verify=config.pem)
         else:
             log_raise_value_error(local_logger=logger, err=f"either api_key or user_name and password are required")
         try:
             logger.info(f"{operation}: " + url)
             if operation.lower() == operation_post:
-                session_response = session.post(url, json=payload, headers=headers)
+                session_response = session.post(url, json=payload, headers=headers, verify=config.pem)
             elif operation.lower() == operation_get:
-                session_response = session.get(url, params=payload, headers=headers)
+                session_response = session.get(url, params=payload, headers=headers, verify=config.pem)
             elif operation.lower() == operation_put:
-                session_response = session.put(url, json=payload, headers=headers)
+                session_response = session.put(url, json=payload, headers=headers, verify=config.pem)
             elif operation.lower() == operation_delete:
-                session_response = session.delete(url, headers=headers)
+                session_response = session.delete(url, headers=headers, verify=config.pem)
             else:
                 log_raise_value_error(local_logger=logger, err=f"Invalid operation: {operation}; only post, get, put "
                                                                f"and delete are supported")
@@ -56,8 +55,7 @@ def call_octopus(config, url_suffix=None, operation=None, payload=None):
                 log_raise_value_error(local_logger=logger, err=response_json)
             return response_json
         except requests.exceptions.RequestException as e:
-            logger.error(e)
-            sys.exit(1)
+            log_raise_value_error(local_logger=logger, err=e)
 
 
 # TODO for testing purpose, to be removed

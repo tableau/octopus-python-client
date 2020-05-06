@@ -69,15 +69,16 @@ class OctopusClient:
         parser = argparse.ArgumentParser()
         parser.add_argument("-o", double_hyphen + octopus_endpoint_key, help="octopus endpoint")
         parser.add_argument("-s", "--space_id_name", help="octopus space id or name")
-        parser.add_argument("-ss", "--spaces",
-                            help='list of octopus space id or name, like "my_space,Spaces-1,Spaces-2"')
+        parser.add_argument("-m", "--pem", help="octopus endpoint root pem file path")
+        parser.add_argument("-sps", "--spaces",
+                            help='list of octopus space id or name, like "my space,Spaces-1,Spaces-2"')
         parser.add_argument("-n", double_hyphen + octopus_name_key,
                             help="customized octopus server name, used for folder name")
         parser.add_argument("-k", double_hyphen + api_key_key,
                             help="api key for octopus; either api_key or user_name and password are required")
-        parser.add_argument("-u", double_hyphen + user_name_key,
+        parser.add_argument("-user", double_hyphen + user_name_key,
                             help="user_name for octopus; either api_key or user_name and password are required")
-        parser.add_argument("-p", double_hyphen + password_key,
+        parser.add_argument("-pass", double_hyphen + password_key,
                             help="password for octopus; either api_key or user_name and password are required")
         parser.add_argument("-sre", "--source_endpoint", help="source octopus endpoint for clone")
         parser.add_argument("-srn", "--source_octopus_name",
@@ -90,6 +91,7 @@ class OctopusClient:
                             help="password for octopus; either api_key or user_name and password are required")
         parser.add_argument("-srs", "--source_space_id_name",
                             help="source octopus space id or name for clone/migration")
+        parser.add_argument("-srm", "--source_pem", help="source octopus endpoint root pem file path")
         parser.add_argument("-lsr", "--local_source", help="if present, local_source = True; the source server/space "
                                                            "data are stored as YAML files locally", action='store_true')
         parser.add_argument("-a", "--action", help=str(Actions.__dict__.values()), required=True)
@@ -158,6 +160,8 @@ class OctopusClient:
             self._target_config.password = args.password
         assert self._target_config.api_key or (self._target_config.user_name and self._target_config.password), \
             f"either api_key or user_name and password are required"
+        if args.pem:
+            self._target_config.pem = args.pem
 
         if args.overwrite:
             self._target_config.overwrite = args.overwrite
@@ -211,6 +215,8 @@ class OctopusClient:
                 self._source_config.password = args.source_password
             assert self._source_config.api_key or (self._source_config.user_name and self._source_config.password), \
                 f"either api_key or user_name and password are required"
+            if args.source_pem:
+                self._source_config.pem = args.source_pem
 
             if args.source_space_id_name:
                 self._source_config.space_id = self._source_common.verify_space(space_id_name=args.source_space_id_name)

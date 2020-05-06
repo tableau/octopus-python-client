@@ -39,6 +39,7 @@ class Actions:
     ACTION_DELETE_PROCESS_STEP = "delete_process_step"  # delete a project process step
     ACTION_CLONE_PROJECT = "clone_project"  # clone a project including process
     ACTION_DELETE_PROJECT = "delete_project"  # delete a project including process
+    ACTION_DELETE_PROJECTS = "delete_projects"  # delete projects inside project groups and excluding projects
     ACTION_GET_PROJECT = "get_project"  # get a project including process
     ACTION_PROJECT_UPDATE_VARIABLE_SETS = "update_variable_sets"  # update the variable sets for a project
     # clone Octopus single item from one space to another space
@@ -131,6 +132,8 @@ class OctopusClient:
         parser.add_argument("-en", "--environment_name", help="environment name, like Integration")
         parser.add_argument("-tn", "--tenant_name", help="tenant name, like cd-near")
         parser.add_argument("-cm", "--comments", help="comments")
+        parser.add_argument("-eps", "--excluded_projects", help="comma delimited project names")
+        parser.add_argument("-pgs", "--project_groups", help="comma delimited project group names")
 
         args, unknown = parser.parse_known_args()
         return args
@@ -300,6 +303,10 @@ class OctopusClient:
                                                                base_project_name=args.base_item_name)
         elif args.action == Actions.ACTION_DELETE_PROJECT:
             Projects(config=self._target_config).delete_project(project_literal_name=args.project_name)
+        elif args.action == Actions.ACTION_DELETE_PROJECTS:
+            Projects(config=self._target_config).delete_projects(
+                project_groups_comma_delimited=args.project_groups,
+                excluded_projects_comma_delimited=args.excluded_projects)
         elif args.action == Actions.ACTION_GET_PROJECT:
             Projects(config=self._target_config).get_project(project_literal_name=args.project_name)
         elif args.action == Actions.ACTION_PROJECT_UPDATE_VARIABLE_SETS:

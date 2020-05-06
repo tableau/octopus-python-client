@@ -2,9 +2,10 @@ import copy
 import logging
 
 from octopus_python_client.common import item_type_projects, item_type_library_variable_sets, \
-    included_library_variable_set_ids_key, id_key, name_key, Common
+    included_library_variable_set_ids_key, id_key, name_key, Common, item_type_project_groups, comma_sign, slash_sign
 from octopus_python_client.deployment_processes import DeploymentProcesses
 from octopus_python_client.utilities.helper import find_item, compare_lists
+from octopus_python_client.utilities.send_requests_to_octopus import operation_delete
 
 
 class Projects:
@@ -39,6 +40,46 @@ class Projects:
             item_type=item_type_projects, item_name=project_literal_name, base_item_name=base_project_name)
         self.deployment_processes.clone_deployment_process(
             project_literal_name=project_literal_name, base_project_name=base_project_name)
+
+    def delete_projects(self, project_groups_comma_delimited, excluded_projects_comma_delimited=None):
+        assert project_groups_comma_delimited, f"project groups delimited by comma must not be empty"
+        list_project_group_ids = []
+        list_project_group_names = project_groups_comma_delimited.split(comma_sign)
+        for project_group_name in list_project_group_names:
+            project_group_id = self.common.get_single_item_by_name(item_type=item_type_project_groups,
+                                                                   item_name=project_group_name).get(id_key)
+            if not project_group_id:
+                raise ValueError(f"{project_group_name} does not match any project group in {self.config.space_id}")
+            list_project_group_ids.append(project_group_id)
+
+        list_excluded_project_names = []
+        if excluded_projects_comma_delimited:
+            list_excluded_project_names = excluded_projects_comma_delimited.split(comma_sign)
+            for excluded_project_name in list_excluded_project_names:
+                excluded_project = self.common.get_single_item_by_name(item_type=item_type_projects,
+                                                                       item_name=excluded_project_name)
+                if not excluded_project:
+                    raise ValueError(f"Excluded project {excluded_project_name} does not match any project in "
+                                     f"{self.config.space_id}")
+
+        self.common.log_info_print(
+            local_logger=self.logger,
+            msg=f"You are deleting all projects inside project groups {list_project_group_names} in "
+                f"{self.config.space_id}) excluding projects {list_excluded_project_names}.")
+        if not self.config.overwrite and input("Please confirm: [Y/n]: ") != 'Y':
+            return
+
+        self.config.overwrite = True
+
+        for project_group_id in list_project_group_ids:
+            address = slash_sign.join([item_type_project_groups, project_group_id, item_type_projects])
+            group_projects = self.common.request_octopus_item(address=address)
+            list_group_projects = self.common.get_list_items_from_all_items(group_projects)
+            for project in list_group_projects:
+                if project.get(name_key) not in list_excluded_project_names:
+                    self.common.log_info_print(local_logger=self.logger, msg=f"deleting {project.get(name_key)}...")
+                    self.common.get_or_delete_single_item_by_id(
+                        item_type=item_type_projects, item_id=project.get(id_key), action=operation_delete)
 
     def delete_project(self, project_literal_name):
         self.common.log_info_print(local_logger=self.logger,

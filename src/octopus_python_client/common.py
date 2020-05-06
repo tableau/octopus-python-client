@@ -253,7 +253,8 @@ class Config:
         self.local_source = False
         self.current_path = None
         self.pem = False
-        # TODO Octopus demo site bug:
+        # TODO Octopus demo site bug: https://demo.octopus.com/api/runbookprocess
+        # newer site uses https://server/api/runbookprocesses (runbookprocess vs runbookprocesses)
         self.item_type_runbook_processes = item_type_runbook_processes
         self.get_config()
 

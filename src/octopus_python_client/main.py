@@ -1,4 +1,5 @@
 import argparse
+import copy
 import logging
 import os
 
@@ -61,8 +62,8 @@ class OctopusClient:
     def __init__(self):
         self._target_config = Config()
         self._target_common = Common(config=self._target_config)
-        self._source_config = Config()
-        self._source_common = Common(config=self._source_config)
+        self._source_config = None
+        self._source_common = None
 
     @staticmethod
     def _parse_args():
@@ -181,12 +182,12 @@ class OctopusClient:
 
         if args.action in OctopusClient.CLONE_ACTIONS_SET:
             self._target_common.log_info_print(msg=f"===== Action: {args.action}; processing the source config =====")
+            self._source_config = copy.deepcopy(self._target_config)
+            self._source_common = Common(config=self._source_config)
 
             if args.local_source:
                 self._source_config.local_source = args.local_source
-            if not args.source_endpoint or args.source_endpoint == self._target_config.endpoint:
-                self._source_config.endpoint = self._target_config.endpoint
-            else:
+            if args.source_endpoint:
                 self._source_config.endpoint = args.source_endpoint
             assert self._source_config.local_source or self._source_config.endpoint.endswith("/api/"), \
                 f"octopus endpoint must end with /api/; {self._source_config.endpoint} is invalid"
@@ -196,9 +197,7 @@ class OctopusClient:
             if octopus_demo_site == self._source_config.endpoint:
                 self._source_config.item_type_runbook_processes = runbook_process_prefix
 
-            if not args.source_octopus_name or args.source_octopus_name == self._target_config.octopus_name:
-                self._source_config.octopus_name = self._target_config.octopus_name
-            else:
+            if args.source_octopus_name:
                 self._source_config.octopus_name = args.source_octopus_name
             assert self._source_config.octopus_name, "source octopus_name must not be empty"
             if self._target_config.endpoint != self._source_config.endpoint \
@@ -219,6 +218,7 @@ class OctopusClient:
                 self._source_config.pem = args.source_pem
 
             if args.source_space_id_name:
+                self._source_config.space_id = None
                 self._source_config.space_id = self._source_common.verify_space(space_id_name=args.source_space_id_name)
                 if self._source_config.space_id:
                     self._target_common.log_info_print(msg=f"The source octopus space_id is: "

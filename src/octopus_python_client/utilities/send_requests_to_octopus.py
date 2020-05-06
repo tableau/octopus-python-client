@@ -3,6 +3,7 @@ import logging
 from types import SimpleNamespace
 
 import requests
+import urllib3
 
 from octopus_python_client.utilities.helper import log_raise_value_error
 
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def call_octopus(config, url_suffix=None, operation=None, payload=None):
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     url = config.endpoint + url_suffix if url_suffix else config.endpoint
     operation = operation if operation else operation_get
     with requests.Session() as session:

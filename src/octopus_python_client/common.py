@@ -187,8 +187,8 @@ item_types_without_single_item = \
 inside_space_level_types = \
     [[item_type_environments, item_type_feeds, item_type_machine_policies, item_type_proxies, item_type_tag_sets,
       item_type_worker_pools],
-     [item_type_action_templates, item_type_library_variable_sets, item_type_life_cycles, item_type_project_groups,
-      item_type_workers],  # item_type_teams,
+     [item_type_action_templates, item_type_library_variable_sets, item_type_life_cycles,  # item_type_packages,
+      item_type_project_groups, item_type_workers],  # item_type_teams,
      [item_type_projects],
      [item_type_channels, item_type_runbooks, item_type_tenants],
      [item_type_accounts, item_type_build_information, item_type_certificates, item_type_dashboard_configuration,
@@ -324,6 +324,7 @@ class Common:
         space = self.find_single_item_from_list_by_name(list_items=list_spaces, item_name=space_id_name)
         if space:
             return space.get(id_key)
+        self.log_error_print(item=list_spaces, msg=f"{space_id_name} not found")
         return None
 
     # remove the unnecessary modified date/user information from put and post operations

@@ -54,7 +54,9 @@ def call_octopus(config, url_suffix=None, operation=None, payload=None):
             if session_response.text:
                 response_json = session_response.json()
             if session_response.status_code < 200 or session_response.status_code > 299:
-                log_raise_value_error(local_logger=logger, err=response_json)
+                log_raise_value_error(local_logger=logger,
+                                      err=f"Error code: {session_response.status_code}; Reason: "
+                                          f"{session_response.reason}; {response_json}")
             return response_json
         except requests.exceptions.RequestException as e:
             log_raise_value_error(local_logger=logger, err=e)

@@ -10,10 +10,10 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     item_type_tenant_variables, canonical_tag_name_key, item_type_tags, tenant_id_key, item_type_migration, space_map, \
     item_type_tenants, slash_sign, underscore_sign, item_type_feeds, secret_key_key, new_value_key, hyphen_sign, \
     item_type_channels, project_id_key, item_type_releases, item_type_artifacts, file_name_key, item_type_runbooks, \
-    runbook_process_id_key, item_type_accounts, token_key, comma_sign, space_id_key, published_runbook_snapshot_id_key, \
-    item_type_scoped_user_roles, user_role_id_key, runbook_process_prefix, \
+    runbook_process_id_key, item_type_accounts, token_key, comma_sign, space_id_key, item_type_packages, \
+    item_type_scoped_user_roles, user_role_id_key, runbook_process_prefix, published_runbook_snapshot_id_key, \
     item_id_prefix_to_type_dict, positive_integer_regex, team_id_key, outer_space_clone_types, item_type_users, \
-    item_type_spaces, default_password, is_service_key, space_managers_teams, item_type_teams
+    item_type_spaces, default_password, is_service_key, space_managers_teams, item_type_teams, package_id_key
 from octopus_python_client.utilities.helper import find_item, save_file, find_matched_sub_list, log_raise_value_error
 from octopus_python_client.utilities.send_requests_to_octopus import login_payload_user_name_key, \
     login_payload_password_key
@@ -68,6 +68,9 @@ class Migration:
             match_dict = {login_payload_user_name_key: src_item_with_dst_ids.get(login_payload_user_name_key)}
         elif item_type == item_type_teams and src_item_with_dst_ids.get(space_id_key):
             match_dict = {name_key: item_name, space_id_key: src_item_with_dst_ids.get(space_id_key)}
+        elif item_type == item_type_packages:
+            match_dict = {package_id_key: src_item_with_dst_ids.get(package_id_key),
+                          version_key: src_item_with_dst_ids.get(version_key)}
         elif item_name:
             match_dict = {name_key: item_name}
         else:
@@ -266,8 +269,16 @@ class Migration:
                 # sometimes, overwrite may not be successful due to different reasons, we can skip in most cases
                 try:
                     dst_item = self._dst_common.put_single_item(item_type=item_type, payload=src_item_copy)
+                    self._dst_common.log_info_print(
+                        local_logger=self.logger,
+                        msg=f"{item_type} {src_item_name} {src_id_value} in space {self._src_config.space_id} overwrote"
+                            f" {dst_item.get(id_key)} in {self._dst_config.space_id} successfully")
                 except Exception as err:
-                    self._dst_common.log_error_print(local_logger=self.logger, msg=err)
+                    self._dst_common.log_error_print(
+                        local_logger=self.logger,
+                        msg=f"Failed to overwrite from {item_type} {src_item_name} {src_id_value} in space "
+                            f"{self._src_config.space_id} to {dst_item.get(id_key)} in {self._dst_config.space_id} "
+                            f"with {err}")
             else:
                 self._dst_common.log_info_print(local_logger=self.logger,
                                                 msg=f"{self._dst_config.space_id} already has {item_type} "
@@ -278,12 +289,16 @@ class Migration:
             # ignore error and continue to process other items
             try:
                 dst_item = self._dst_common.post_single_item(item_type=item_type, payload=src_item_copy)
+                self._dst_common.log_info_print(
+                    local_logger=self.logger,
+                    msg=f"{item_type} {src_item_name} {src_id_value} in space {self._src_config.space_id} was cloned "
+                        f"to space {self._dst_config.space_id} as {dst_item.get(id_key)} successfully")
             except Exception as err:
-                self._dst_common.log_error_print(local_logger=self.logger, msg=err)
-            self._dst_common.log_info_print(
-                local_logger=self.logger,
-                msg=f"{item_type} {src_item_name} {src_id_value} in space {self._src_config.space_id} was cloned "
-                    f"to space {self._dst_config.space_id} as {dst_item.get(id_key)} successfully")
+                self._dst_common.log_error_print(
+                    local_logger=self.logger,
+                    msg=f"Failed to clone {item_type} {src_item_name} {src_id_value} from space "
+                        f"{self._src_config.space_id} to space {self._dst_config.space_id} with {err}")
+                return None
 
         dst_id_value = dst_item.get(id_key)
         self.logger.info(f"add the id pair ({src_id_value}, {dst_id_value}) to the id map")
@@ -435,8 +450,8 @@ class Migration:
         self._src_id_vs_dst_id_dict[src_child_id] = dst_child_id
 
         self.logger.info(
-            f"clone {parent_type} {parent_name}'s {child_id_key} {src_child_id} from {self._src_config.space_id} to "
-            f"{self._dst_config.space_id}")
+            f"cloning {parent_type} {parent_name}'s {child_id_key} {src_child_id} from {self._src_config.space_id} to "
+            f"{self._dst_config.space_id}...")
         src_child = self._src_id_payload_dict.get(src_child_id)
 
         # ignore cloning child error due to permission and other misc issues
@@ -470,8 +485,15 @@ class Migration:
         # sometimes, overwrite may not be successful due to different reasons, we can skip in most cases
         try:
             dst_child = self._dst_common.put_single_item(item_type=dst_child_type, payload=src_child_copy)
+            self._dst_common.log_info_print(
+                local_logger=self.logger,
+                msg=f"Finished overwriting {parent_type} {parent_name}'s {src_child_type} {src_child_id} from "
+                    f"{self._src_config.space_id} to {self._dst_config.space_id} as {dst_child_id} successfully")
         except Exception as err:
-            self._dst_common.log_error_print(local_logger=self.logger, msg=err)
+            self._dst_common.log_error_print(
+                local_logger=self.logger,
+                msg=f"Failed to overwrite {parent_type} {parent_name}'s {src_child_type} {src_child_id} from "
+                    f"{self._src_config.space_id} to {self._dst_config.space_id} as {dst_child_id} with {err}")
 
         self._dst_id_payload_dict[dst_child_id] = dst_child
         return dst_child_id
@@ -527,9 +549,16 @@ class Migration:
         try:
             dst_tenant_variables = \
                 self._dst_common.put_post_tenant_variables(tenant_id=dst_id, tenant_variables=src_tenant_variables_copy)
+            self._dst_common.log_info_print(
+                local_logger=self.logger,
+                msg=f"Finished overwriting {item_type_tenant_variables} from {item_type_tenants} {src_id} in "
+                    f"{self._src_config.space_id} to {dst_id} in {self._dst_config.space_id} successfully")
         except Exception as err:
             dst_tenant_variables = self._dst_common.get_tenant_variables(tenant_id=dst_id)
-            self._dst_common.log_error_print(local_logger=self.logger, msg=err)
+            self._dst_common.log_error_print(
+                local_logger=self.logger,
+                msg=f"Failed to overwrite {item_type_tenant_variables} from {item_type_tenants} {src_id} in "
+                    f"{self._src_config.space_id} to {dst_id} in {self._dst_config.space_id} with {err}")
 
         self._dst_tenant_variables_payload_dict[dst_id] = dst_tenant_variables
 
@@ -553,7 +582,17 @@ class Migration:
                 self.logger.info(f"{item_type_tag_sets} {dst_tag_set.get(name_key)} does not have {item_id} in "
                                  f"{self._dst_config.space_id}, add it")
                 dst_tag_set.get(tags_key).append(src_tag_copy)
-                dst_tag_set = self._dst_common.put_single_item(item_type=item_type_tag_sets, payload=dst_tag_set)
+                try:
+                    dst_tag_set = self._dst_common.put_single_item(item_type=item_type_tag_sets, payload=dst_tag_set)
+                    self._dst_common.log_info_print(
+                        local_logger=self.logger,
+                        msg=f"overwrote {item_type} {item_name} {item_id} from {self._src_config.space_id} to "
+                            f"{self._dst_config.space_id} successfully")
+                except Exception as err:
+                    self._dst_common.log_error_print(
+                        local_logger=self.logger,
+                        msg=f"Failed to overwrite {item_type} {item_name} {item_id} from {self._src_config.space_id} to"
+                            f" {self._dst_config.space_id} unsuccessfully with {err}")
             else:
                 self.logger.info(f"{item_type_tag_sets} {dst_tag_set.get(name_key)} already has {item_id} in "
                                  f"{self._dst_config.space_id}, skip")
@@ -567,8 +606,15 @@ class Migration:
             # ignore error and continue to process other items
             try:
                 dst_tag_set = self._dst_common.post_single_item(item_type=item_type_tag_sets, payload=dst_tag_set)
+                self._dst_common.log_info_print(
+                    local_logger=self.logger,
+                    msg=f"cloned {item_type} {item_name} {item_id} from {self._src_config.space_id} to "
+                        f"{self._dst_config.space_id} successfully")
             except Exception as err:
-                self._dst_common.log_error_print(local_logger=self.logger, msg=err)
+                self._dst_common.log_error_print(
+                    local_logger=self.logger,
+                    msg=f"Failed to clone {item_type} {item_name} {item_id} from {self._src_config.space_id} to "
+                        f"{self._dst_config.space_id} with {err}")
         self._src_id_vs_dst_id_dict[item_id] = item_id
         self._dst_id_payload_dict[item_id] = find_item(lst=dst_tag_set.get(tags_key), key=canonical_tag_name_key,
                                                        value=item_id)
@@ -606,6 +652,8 @@ class Migration:
                 if not self._src_config.space_id and src_item.get(space_id_key) \
                         or item_type == item_type_scoped_user_roles \
                         and self._src_config.space_id != src_item.get(space_id_key):
+                    self.logger.info(f"skip loading {item_type} - source space id {self._src_config.space_id} - source "
+                                     f"item space id {src_item.get(space_id_key)}")
                     continue
                 # TODO some items are a pure list of strings, they might be useful in the future, like variables/names
                 if isinstance(src_item, str):
@@ -660,7 +708,7 @@ class Migration:
         else:
             self._src_id_vs_dst_id_dict[self._src_config.space_id] = self._dst_config.space_id
 
-        if item_type_tags in self._all_types:
+        if item_type_tag_sets in self._all_types:
             self._prep_tag_sets()
 
     def _save_space_map(self):
@@ -697,8 +745,8 @@ class Migration:
             local_logger=self.logger,
             msg=f"cloning {item_type} {item_badge} from {self._src_config.space_id} on server "
                 f"{self._src_config.endpoint} to {self._dst_config.space_id} on server {self._dst_config.endpoint}")
-        if not self._src_config.overwrite:
-            self._src_config.overwrite = input(
+        if not self._dst_config.overwrite:
+            self._dst_config.overwrite = input(
                 f"Some entities may already exist in {self._dst_config.space_id} on server {self._dst_config.endpoint};"
                 f" Do you want to overwrite the existing entities? "
                 f"If no, we will skip the existing entities. [Y/n]: ") == 'Y'

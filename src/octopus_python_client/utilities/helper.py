@@ -201,3 +201,9 @@ def is_local_same_as_remote2(remote_item, local_item_file):
         raise ValueError('remote_item and local_item_file must not be empty')
     local_item = load_file(local_item_file)
     return compare_dicts(local_item, remote_item), local_item
+
+
+def write_binary_file(local_file, content):
+    logger.info(f"writing a binary file {local_file}...")
+    with open(local_file, "wb") as file:
+        file.write(content)

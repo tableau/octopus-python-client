@@ -209,8 +209,9 @@ class ReleaseDeployment:
         self._release_request_payload[selected_packages_key] = self._selected_packages
         logger.info("the request release payload is")
         logger.info(pformat(self._release_request_payload))
-        self._release_response = self._common.request_octopus_item(payload=self._release_request_payload,
-                                                                   address=item_type_releases, action=operation_post)
+        self._release_response = self._common.request_octopus_item(address=item_type_releases,
+                                                                   payload=self._release_request_payload,
+                                                                   operation=operation_post)
         if self._latest_commit_dict:
             self._release_response[latest_commit_sha_key] = self._latest_commit_dict.get(sha_key)
         logger.info("the response release payload is")
@@ -237,8 +238,9 @@ class ReleaseDeployment:
              comments_key: comments}
         logger.info("the request deployment payload is")
         logger.info(pformat(deployment_request_payload))
-        deployment_response_payload = common.request_octopus_item(payload=deployment_request_payload,
-                                                                  address=item_type_deployments, action=operation_post)
+        deployment_response_payload = common.request_octopus_item(address=item_type_deployments,
+                                                                  payload=deployment_request_payload,
+                                                                  operation=operation_post)
         logger.info("the response deployment payload is")
         common.log_info_print(local_logger=logger, msg=json.dumps(deployment_response_payload))
         common.save_single_item(item_type=item_type_deployments, item=deployment_response_payload)

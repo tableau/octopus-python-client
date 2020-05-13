@@ -5,9 +5,9 @@ import time
 from pprint import pformat
 
 from octopus_python_client.utilities.helper import compare_overwrite, find_item, load_file, save_file, \
-    is_local_same_as_remote2
+    is_local_same_as_remote2, write_binary_file
 from octopus_python_client.utilities.send_requests_to_octopus import call_octopus, operation_get, operation_post, \
-    operation_put, operation_delete
+    operation_put, operation_delete, operation_get_file, operation_post_file
 
 # constants
 all_underscore = "all_"
@@ -25,6 +25,7 @@ folder_configurations = "configurations"
 hyphen_sign = "-"
 newline_sign = "\n"
 octopus_demo_site = "https://demo.octopusdeploy.com/api/"
+package_raw = "raw"
 positive_integer_regex = "-[1-9][0-9]*$"
 runbook_process_prefix = "RunbookProcess"
 slash_all = "/all"
@@ -52,6 +53,8 @@ donor_package_step_id_key = "DonorPackageStepId"
 environment_id_key = "EnvironmentId"
 environment_ids_key = "EnvironmentIds"
 feed_id_key = "FeedId"
+file_extension_key = "FileExtension"
+file_key = "file"
 file_name_key = "Filename"
 id_key = 'Id'
 included_library_variable_set_ids_key = "IncludedLibraryVariableSetIds"
@@ -187,7 +190,7 @@ item_types_without_single_item = \
 inside_space_level_types = \
     [[item_type_environments, item_type_feeds, item_type_machine_policies, item_type_proxies, item_type_tag_sets,
       item_type_worker_pools],
-     [item_type_action_templates, item_type_library_variable_sets, item_type_life_cycles,  # item_type_packages,
+     [item_type_action_templates, item_type_library_variable_sets, item_type_life_cycles, item_type_packages,
       item_type_project_groups, item_type_workers],  # item_type_teams,
      [item_type_projects],
      [item_type_channels, item_type_runbooks, item_type_tenants],
@@ -200,7 +203,7 @@ inside_space_child_types = [item_type_deployment_processes, item_type_runbook_pr
 inside_space_only_all_types = [item_type_variables, item_type_tenant_variables, item_type_machine_roles]
 # the other types not cloneable for now
 inside_space_other_types = \
-    [item_type_packages, item_type_releases, item_type_interruptions, item_type_user_onboarding, item_type_dashboard,
+    [item_type_releases, item_type_interruptions, item_type_user_onboarding, item_type_dashboard,
      item_type_dashboard_dynamic, item_type_deployments, item_type_variables_names, item_type_artifacts, item_type_home,
      item_type_runbook_snapshots]
 
@@ -251,6 +254,7 @@ class Config:
         self.overwrite = False
         self.no_stdout = False
         self.local_source = False
+        self.package = False
         self.current_path = None
         self.pem = False
         # TODO Octopus demo site bug: https://demo.octopus.com/api/runbookprocess
@@ -356,15 +360,15 @@ class Common:
 
     # get the local single item file from self.config.current_path, space_id, item type, file_name;
     # for spaces files, no space_id needed
-    def get_local_single_item_file(self, item_name, item_type):
+    def get_local_single_item_file(self, item_name, item_type, no_ext=False):
         item_type = item_type.replace(slash_sign, underscore_sign)
         item_name = item_name.replace(slash_sign, underscore_sign)
         if self.config.space_id:
             return os.path.join(self.config.current_path, self.config.octopus_name, self.config.space_id, item_type,
-                                item_name + yaml_ext)
+                                item_name + ("" if no_ext else yaml_ext))
         else:
             return os.path.join(self.config.current_path, self.config.octopus_name, folder_outer_spaces, item_type,
-                                item_name + yaml_ext)
+                                item_name + ("" if no_ext else yaml_ext))
 
     # get the local all items file from self.config.current_path, space_id, item type;
     # for spaces files, no space_id needed
@@ -460,9 +464,13 @@ class Common:
         all_items = self.get_one_type_ignore_error(item_type=item_type)
         self.compare_overwrite_multiple_items(items=all_items, item_type=item_type, overwrite=overwrite)
         if item_type == item_type_users:
-            list_items = self.get_list_items_from_all_items(all_items=all_items)
-            item_ids = [item.get(id_key) for item in list_items]
-            self.get_ext_types_save(item_type=item_type_users, item_ids=item_ids)
+            list_users = self.get_list_items_from_all_items(all_items=all_items)
+            user_ids = [user.get(id_key) for user in list_users]
+            self.get_ext_types_save(item_type=item_type_users, item_ids=user_ids)
+        elif item_type == item_type_packages and self.config.package:
+            list_packages = self.get_list_items_from_all_items(all_items=all_items)
+            for package in list_packages:
+                self.save_package(package_dict=package)
         return all_items
 
     def delete_types(self, item_types_comma_delimited=None):
@@ -618,13 +626,13 @@ class Common:
         if remote_tenant_variables:
             self.logger.info(f"the tenant variables exist in {tenant_id} in {self.config.space_id}, so overwrite")
             self.logger.info(f"tenant {tenant_id} has existing variables, so put the variables")
-            remote_tenant_variables = self.request_octopus_item(payload=tenant_variables, address=address,
-                                                                action=operation_put)
+            remote_tenant_variables = self.request_octopus_item(address=address, payload=tenant_variables,
+                                                                operation=operation_put)
         else:
             # TODO add a log to see if any "POST" exist, it may be an Octopus bug
             self.logger.warning(f"tenant {tenant_id} has no variables, so post the variables")
-            remote_tenant_variables = self.request_octopus_item(payload=tenant_variables, address=address,
-                                                                action=operation_post)
+            remote_tenant_variables = self.request_octopus_item(address=address, payload=tenant_variables,
+                                                                operation=operation_post)
         return remote_tenant_variables
 
     # put/post tenant variables and save to local file
@@ -677,6 +685,8 @@ class Common:
         elif item_type == item_type_tenants:
             self.logger.info(f"the item type is {item_type_tenants}, so also get its variables")
             self.get_tenant_variables_save(tenant_id=item.get(id_key))
+        elif item_type == item_type_packages:
+            self.save_package(package_dict=item)
         return item
 
     # a single item from Octopus server for the item which cannot be searched by the item_name (like deployment process)
@@ -967,16 +977,17 @@ class Common:
         return find_item(lst=list_items, key=id_key, value=item_id_value)
 
     # request an item by calling Octopus API /api/{space_id}/address
-    def request_octopus_item(self, address, payload=None, action=operation_get):
+    def request_octopus_item(self, address, payload=None, operation=operation_get, files=None):
         space_url = self.config.space_id + slash_sign if self.config.space_id else ""
         url_suffix = space_url + address
-        item = call_octopus(operation=action, payload=payload, config=self.config, url_suffix=url_suffix)
+        item = call_octopus(operation=operation, payload=payload, config=self.config, url_suffix=url_suffix,
+                            files=files)
         Common.pop_last_modified(item)
         return item
 
     def find_sub_by_item(self, item_type, item_id, sub_type, sub_name):
         address = item_type + slash_sign + item_id + slash_sign + sub_type
-        sub_items = self.request_octopus_item(payload=None, address=address, action=operation_get)
+        sub_items = self.request_octopus_item(address=address, payload=None, operation=operation_get)
         list_sub_items = self.get_list_items_from_all_items(all_items=sub_items)
         return find_item(lst=list_sub_items, key=name_key, value=sub_name)
 
@@ -1023,3 +1034,37 @@ class Common:
         self.log_info_print(msg=f"task {task_id} in space {self.config.space_id} completes with status {status} at "
                                 f"{counter} seconds")
         return status
+
+    def get_package_file(self, package_dict):
+        file_name = f"{package_dict.get(package_id_key)}.{package_dict.get(version_key)}" \
+                    f"{package_dict.get(file_extension_key)}"
+        return self.get_local_single_item_file(item_name=file_name, item_type=item_type_packages, no_ext=True)
+
+    def open_local_package(self, package_dict):
+        local_file = self.get_package_file(package_dict=package_dict)
+        self.logger.info(f"loading the package from a local file {local_file}")
+        return open(local_file, 'rb')
+
+    def get_package(self, package_id):
+        try:
+            self.logger.info(f"get package {package_id} from space {self.config.space_id} on server "
+                             f"{self.config.endpoint}")
+            address = f"{item_type_packages}/{package_id}/{package_raw}"
+            return self.request_octopus_item(address=address, operation=operation_get_file)
+        except Exception as err:
+            self.log_error_print(msg=f"Failed to get package {package_id} from space {self.config.space_id} on server "
+                                     f"{self.config.endpoint} with {err}")
+            return b""
+
+    def save_package(self, package_dict):
+        content = self.get_package(package_id=package_dict.get(id_key))
+        package_file = self.get_package_file(package_dict)
+        write_binary_file(local_file=package_file, content=content)
+
+    def post_package(self, content):
+        self.logger.info(f"post package to space {self.config.space_id} on server {self.config.endpoint}")
+        if self.config.overwrite:
+            address = f"{item_type_packages}/{package_raw}?overwriteMode=OverwriteExisting"
+        else:
+            address = f"{item_type_packages}/{package_raw}?overwriteMode=IgnoreIfExists"
+        return self.request_octopus_item(address=address, operation=operation_post_file, files={file_key: content})

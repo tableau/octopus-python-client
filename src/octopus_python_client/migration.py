@@ -204,6 +204,88 @@ class Migration:
 
         return self._create_item_to_space(item_type=item_type, src_item=src_item)
 
+    def _clone_package(self, src_package_dict):
+        if self._src_config.local_source:
+            self._dst_common.log_info_print(
+                local_logger=self.logger,
+                msg=f"loading file from {self._src_config.octopus_name}/{self._src_config.space_id}/"
+                    f"{item_type_packages}/{src_package_dict.get(id_key)}")
+            content = self._src_common.open_local_package(package_dict=src_package_dict)
+        else:
+            content = self._src_common.get_package(src_package_dict.get(id_key))
+        return self._dst_common.post_package(content=content)
+
+    def _put_post_item_to_space(self, item_type, src_item_copy, src_item):
+        src_id_value = src_item.get(id_key)
+        src_item_name = src_item.get(name_key)
+        self.logger.info(
+            f"check if {item_type} {src_item_name} {src_id_value} in space {self._src_config.space_id} already exists"
+            f" in space {self._dst_config.space_id}")
+        dst_item = self._find_matched_dst_item_by_src_item(src_item_with_dst_ids=src_item_copy, item_type=item_type)
+        dst_item_exist = True if dst_item else False
+        if dst_item_exist:
+            if self._dst_config.overwrite:
+                self._dst_common.log_info_print(
+                    local_logger=self.logger,
+                    msg=f"destination space {self._dst_config.space_id} already has {item_type} {src_item_name} "
+                        f"{dst_item.get(id_key)}, overwriting it per user request...")
+                src_item_copy[id_key] = dst_item.get(id_key)
+
+                # TODO bug in Octopus: PUT a runbook with null RunbookProcessId will remove RunbookProcessId from dst
+                if item_type == item_type_runbooks and src_item.get(runbook_process_id_key):
+                    matched_runbook_process_id = runbook_process_prefix + hyphen_sign + dst_item.get(id_key)
+                    self.logger.warning(f"TODO bug in Octopus: PUT a runbook with null RunbookProcessId will remove "
+                                        f"RunbookProcessId from dst; Reassign process id {matched_runbook_process_id} "
+                                        f"for {src_item_copy.get(id_key)}")
+                    src_item_copy[runbook_process_id_key] = matched_runbook_process_id
+
+                # # TODO for update/put the version must match (maybe need later)
+                # # dst_item.get(version_key) could be zero
+                # if dst_item.get(version_key) is not None:
+                #     self.logger.info(f"{version_key} is updated to {dst_item.get(version_key)}")
+                #     src_item_copy[version_key] = dst_item.get(version_key)
+
+                # sometimes, overwrite may not be successful due to different reasons, we can skip in most cases
+                try:
+                    if item_type == item_type_packages:
+                        dst_item = self._clone_package(src_package_dict=src_item)
+                    else:
+                        dst_item = self._dst_common.put_single_item(item_type=item_type, payload=src_item_copy)
+                    self._dst_common.log_info_print(
+                        local_logger=self.logger,
+                        msg=f"{item_type} {src_item_name} {src_id_value} in space {self._src_config.space_id} "
+                            f"overwrote {dst_item.get(id_key)} in {self._dst_config.space_id} successfully")
+                except Exception as err:
+                    self._dst_common.log_error_print(
+                        local_logger=self.logger,
+                        msg=f"Failed to overwrite from {item_type} {src_item_name} {src_id_value} in space "
+                            f"{self._src_config.space_id} to {dst_item.get(id_key)} in {self._dst_config.space_id} "
+                            f"with {err}")
+            else:
+                self._dst_common.log_info_print(local_logger=self.logger,
+                                                msg=f"{self._dst_config.space_id} already has {item_type} "
+                                                    f"{src_item_name} {dst_item.get(id_key)}, skip it per user request")
+        else:
+            self.logger.info(f"destination space {self._dst_config.space_id} does not have {item_type} {src_item_name} "
+                             f"{src_id_value} from space {self._src_config.space_id}, so creating it...")
+            # ignore error and continue to process other items
+            try:
+                if item_type == item_type_packages:
+                    dst_item = self._clone_package(src_package_dict=src_item)
+                else:
+                    dst_item = self._dst_common.post_single_item(item_type=item_type, payload=src_item_copy)
+                self._dst_common.log_info_print(
+                    local_logger=self.logger,
+                    msg=f"{item_type} {src_item_name} {src_id_value} in space {self._src_config.space_id} was cloned "
+                        f"to space {self._dst_config.space_id} as {dst_item.get(id_key)} successfully")
+            except Exception as err:
+                self._dst_common.log_error_print(
+                    local_logger=self.logger,
+                    msg=f"Failed to clone {item_type} {src_item_name} {src_id_value} from space "
+                        f"{self._src_config.space_id} to space {self._dst_config.space_id} with {err}")
+                return None, False
+        return dst_item, dst_item_exist
+
     def _create_item_to_space(self, item_type, src_item):
         src_id_value = src_item.get(id_key)
         src_item_name = src_item.get(name_key)
@@ -239,67 +321,10 @@ class Migration:
 
         self._replace_ids(dict_list=src_item_copy)
 
-        self.logger.info(
-            f"check if {item_type} {src_item_name} {src_id_value} in space {self._src_config.space_id} already exists"
-            f" in space {self._dst_config.space_id}")
-        dst_item = self._find_matched_dst_item_by_src_item(src_item_with_dst_ids=src_item_copy, item_type=item_type)
-        dst_item_exist = True if dst_item else False
-        if dst_item_exist:
-            if self._dst_config.overwrite:
-                self._dst_common.log_info_print(
-                    local_logger=self.logger,
-                    msg=f"destination space {self._dst_config.space_id} already has {item_type} {src_item_name} "
-                        f"{dst_item.get(id_key)}, overwriting it per user request...")
-                src_item_copy[id_key] = dst_item.get(id_key)
-
-                # TODO bug in Octopus: PUT a runbook with null RunbookProcessId will remove RunbookProcessId from dst
-                if item_type == item_type_runbooks and src_item.get(runbook_process_id_key):
-                    matched_runbook_process_id = runbook_process_prefix + hyphen_sign + dst_item.get(id_key)
-                    self.logger.warning(f"TODO bug in Octopus: PUT a runbook with null RunbookProcessId will remove "
-                                        f"RunbookProcessId from dst; Reassign process id {matched_runbook_process_id} "
-                                        f"for {src_item_copy.get(id_key)}")
-                    src_item_copy[runbook_process_id_key] = matched_runbook_process_id
-
-                # # TODO for update/put the version must match (maybe need later)
-                # # dst_item.get(version_key) could be zero
-                # if dst_item.get(version_key) is not None:
-                #     self.logger.info(f"{version_key} is updated to {dst_item.get(version_key)}")
-                #     src_item_copy[version_key] = dst_item.get(version_key)
-
-                # sometimes, overwrite may not be successful due to different reasons, we can skip in most cases
-                try:
-                    dst_item = self._dst_common.put_single_item(item_type=item_type, payload=src_item_copy)
-                    self._dst_common.log_info_print(
-                        local_logger=self.logger,
-                        msg=f"{item_type} {src_item_name} {src_id_value} in space {self._src_config.space_id} overwrote"
-                            f" {dst_item.get(id_key)} in {self._dst_config.space_id} successfully")
-                except Exception as err:
-                    self._dst_common.log_error_print(
-                        local_logger=self.logger,
-                        msg=f"Failed to overwrite from {item_type} {src_item_name} {src_id_value} in space "
-                            f"{self._src_config.space_id} to {dst_item.get(id_key)} in {self._dst_config.space_id} "
-                            f"with {err}")
-            else:
-                self._dst_common.log_info_print(local_logger=self.logger,
-                                                msg=f"{self._dst_config.space_id} already has {item_type} "
-                                                    f"{src_item_name} {dst_item.get(id_key)}, skip it per user request")
-        else:
-            self.logger.info(f"destination space {self._dst_config.space_id} does not have {item_type} {src_item_name} "
-                             f"{src_id_value} from space {self._src_config.space_id}, so creating it...")
-            # ignore error and continue to process other items
-            try:
-                dst_item = self._dst_common.post_single_item(item_type=item_type, payload=src_item_copy)
-                self._dst_common.log_info_print(
-                    local_logger=self.logger,
-                    msg=f"{item_type} {src_item_name} {src_id_value} in space {self._src_config.space_id} was cloned "
-                        f"to space {self._dst_config.space_id} as {dst_item.get(id_key)} successfully")
-            except Exception as err:
-                self._dst_common.log_error_print(
-                    local_logger=self.logger,
-                    msg=f"Failed to clone {item_type} {src_item_name} {src_id_value} from space "
-                        f"{self._src_config.space_id} to space {self._dst_config.space_id} with {err}")
-                return None
-
+        dst_item, dst_item_exist = self._put_post_item_to_space(item_type=item_type, src_item_copy=src_item_copy,
+                                                                src_item=src_item)
+        if not dst_item:
+            return None
         dst_id_value = dst_item.get(id_key)
         self.logger.info(f"add the id pair ({src_id_value}, {dst_id_value}) to the id map")
         self._src_id_vs_dst_id_dict[src_id_value] = dst_id_value

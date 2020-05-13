@@ -13,9 +13,9 @@ from octopus_python_client.release_deployment import ReleaseDeployment
 from octopus_python_client.utilities.helper import log_raise_value_error
 
 logging.basicConfig(filename=os.path.join(os.getcwd(), "octopus_python_client.log"),
-                    filemode='a',
-                    format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-                    datefmt='%H:%M:%S',
+                    filemode="a",
+                    format="%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s",
+                    datefmt="%H:%M:%S",
                     level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -94,17 +94,17 @@ class OctopusClient:
                             help="source octopus space id or name for clone/migration")
         parser.add_argument("-srm", "--source_pem", help="source octopus endpoint root pem file path")
         parser.add_argument("-lsr", "--local_source", help="if present, local_source = True; the source server/space "
-                                                           "data are stored as YAML files locally", action='store_true')
+                                                           "data are stored as YAML files locally", action="store_true")
         parser.add_argument("-a", "--action", help=str(Actions.__dict__.values()), required=True)
-        parser.add_argument("-ow", "--overwrite", help="if present, overwrite = True", action='store_true')
+        parser.add_argument("-ow", "--overwrite", help="if present, overwrite = True", action="store_true")
         parser.add_argument("-ns", "--no_stdout", help="if present, no_stdout = True, means no stdout",
-                            action='store_true')
+                            action="store_true")
         parser.add_argument("-ts", "--item_types",
-                            help='if not item_types and not octopus_space_id, get all item types '
-                                 'regardless whether they are above Spaces; if (not item_types) and octopus_space_id, '
-                                 'get all item types below octopus_space_id; '
+                            help="if not item_types and not octopus_space_id, get all item types "
+                                 "regardless whether they are above Spaces; if (not item_types) and octopus_space_id, "
+                                 "get all item types below octopus_space_id; "
                                  'list like "accounts,actiontemplates,artifacts" is also accepted; '
-                                 'item types above Spaces: ' + ", ".join(outer_space_download_types) +
+                                 "item types above Spaces: " + ", ".join(outer_space_download_types) +
                                  "; \nitem types above and under Spaces: " + ", ".join(inside_space_download_types))
         parser.add_argument("-tp", "--item_type", help="one of item types above Spaces: " + ", ".join(
             outer_space_download_types) + "; \nitem types above and under Spaces: " + ", ".join(
@@ -137,6 +137,8 @@ class OctopusClient:
         parser.add_argument("-cm", "--comments", help="comments")
         parser.add_argument("-eps", "--excluded_projects", help="comma delimited project names")
         parser.add_argument("-pgs", "--project_groups", help="comma delimited project group names")
+        parser.add_argument("-pkg", "--package", help="if present, package = True, download package to local file",
+                            action="store_true")
 
         args, unknown = parser.parse_known_args()
         return args
@@ -148,6 +150,11 @@ class OctopusClient:
             self._target_config.endpoint = args.endpoint
         assert self._target_config.endpoint.endswith("/api/"), \
             f"octopus endpoint must end with /api/; {self._target_config.endpoint} is invalid"
+
+        # TODO Octopus demo site bug: https://demo.octopus.com/api/runbookprocess
+        # newer site uses https://server/api/runbookprocesses (runbookprocess vs runbookprocesses)
+        if octopus_demo_site == self._target_config.endpoint:
+            self._target_config.item_type_runbook_processes = runbook_process_prefix
 
         if args.octopus_name:
             self._target_config.octopus_name = args.octopus_name
@@ -168,6 +175,8 @@ class OctopusClient:
             self._target_config.overwrite = args.overwrite
         if args.no_stdout:
             self._target_config.no_stdout = args.no_stdout
+        if args.package:
+            self._target_config.package = args.package
 
         if args.space_id_name:
             self._target_config.space_id = self._target_common.verify_space(space_id_name=args.space_id_name)
@@ -177,7 +186,7 @@ class OctopusClient:
                 raise ValueError(f"the space id/name {args.space_id_name} you specified does not exist or "
                                  f"you do not have permission to access it on server {self._target_config.endpoint}")
         elif args.action != Actions.ACTION_GET_SPACES \
-                and input(f"Are you sure you want to run a command against {None} space [Y/n]? ") != 'Y':
+                and input(f"Are you sure you want to run a command against {None} space [Y/n]? ") != "Y":
             return
 
         if args.action in OctopusClient.CLONE_ACTIONS_SET:
@@ -207,7 +216,12 @@ class OctopusClient:
                                  f"folder name {self._target_config.octopus_name}")
 
             if args.source_api_key:
-                self._source_config.api_key = args.source_api_key
+                if args.source_api_key.startswith("API-"):
+                    self._source_config.api_key = args.source_api_key
+                else:
+                    self._target_common.log_info_print(
+                        msg=f"The source octopus API-KEY does not start with 'API-'; so use user/password instead")
+                    self._source_config.api_key = None
             if args.source_user_name:
                 self._source_config.user_name = args.source_user_name
             if args.source_password:

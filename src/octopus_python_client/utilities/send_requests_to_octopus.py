@@ -1,4 +1,3 @@
-import json
 import logging
 from types import SimpleNamespace
 
@@ -11,6 +10,8 @@ operation_delete = "delete"
 operation_get = "get"
 operation_post = "post"
 operation_put = "put"
+operation_get_file = "get_file"
+operation_post_file = "post_file"
 
 application_json = "application/json"
 content_type_key = "Content-Type"
@@ -22,15 +23,15 @@ x_octopus_api_key_key = "X-Octopus-ApiKey"
 logger = logging.getLogger(__name__)
 
 
-def call_octopus(config, url_suffix=None, operation=None, payload=None):
+def call_octopus(config, url_suffix=None, operation=None, payload=None, files=None):
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     url = config.endpoint + url_suffix if url_suffix else config.endpoint
     operation = operation if operation else operation_get
     with requests.Session() as session:
+        headers = {} if operation == operation_post_file else {content_type_key: application_json}
         if config.api_key:
-            headers = {content_type_key: application_json, x_octopus_api_key_key: config.api_key}
+            headers[x_octopus_api_key_key] = config.api_key
         elif config.user_name and config.password:
-            headers = {content_type_key: application_json}
             login_url = config.endpoint + users_login_url_suffix
             login_payload = {login_payload_user_name_key: config.user_name, login_payload_password_key: config.password}
             session.post(login_url, json=login_payload, headers=headers, verify=config.pem)
@@ -46,9 +47,16 @@ def call_octopus(config, url_suffix=None, operation=None, payload=None):
                 session_response = session.put(url, json=payload, headers=headers, verify=config.pem)
             elif operation.lower() == operation_delete:
                 session_response = session.delete(url, headers=headers, verify=config.pem)
+            elif operation.lower() == operation_get_file:
+                session_response = session.get(url, headers=headers, verify=config.pem)
+                if session_response.status_code == 200:
+                    return session_response.content
+            elif operation.lower() == operation_post_file:
+                session_response = session.post(url, files=files, headers=headers, verify=config.pem)
             else:
-                log_raise_value_error(local_logger=logger, err=f"Invalid operation: {operation}; only post, get, put "
-                                                               f"and delete are supported")
+                log_raise_value_error(local_logger=logger,
+                                      err=f"Invalid operation: {operation}; only post, get, put, delete, get_file, "
+                                          f"post_file are supported")
             logger.info("response status code: " + str(session_response.status_code))
             response_json = ""
             if session_response.text:
@@ -66,9 +74,35 @@ def call_octopus(config, url_suffix=None, operation=None, payload=None):
 def run():
     print("==================== test octopus http requests ===================")
     octopus_config = {"endpoint": "https://demo.octopusdeploy.com/api/", "api_key": None, "user_name": "guest",
-                      "password": "guest"}
+                      "password": "guest", "pem": False}
     response = call_octopus(config=SimpleNamespace(**octopus_config), url_suffix="Spaces-1/environments")
-    print(json.dumps(response))
+    print(response)
+    response = call_octopus(config=SimpleNamespace(**octopus_config),
+                            url_suffix="Spaces-1/packages/packages-OctoFX.Database.3.5.3047")
+    package_dict = response
+    print(package_dict)
+    file_name = f"{package_dict.get('PackageId')}.{package_dict.get('Version')}{package_dict.get('FileExtension')}"
+    print(file_name)
+    content = call_octopus(config=SimpleNamespace(**octopus_config),
+                           url_suffix="Spaces-1/packages/packages-OctoFX.Database.3.5.3047/raw",
+                           operation=operation_get_file)
+    print(len(content))
+    file = open(file_name, "wb")
+    file.write(content)
+    file.close()
+    dst_octopus_config = {"endpoint": "http://localhost/api/", "api_key": "API-XXX", "pem": False}
+    package = {"file": open(file_name, 'rb')}
+    upload_response = call_octopus(config=SimpleNamespace(**dst_octopus_config),
+                                   url_suffix="Spaces-1/packages/raw?overwriteMode=OverwriteExisting",
+                                   # IgnoreIfExists
+                                   operation=operation_post_file,
+                                   files={"file": content})
+    print(upload_response)
+    upload_response = call_octopus(config=SimpleNamespace(**dst_octopus_config),
+                                   url_suffix="Spaces-1/packages/raw?overwriteMode=IgnoreIfExists",
+                                   operation=operation_post_file,
+                                   files=package)
+    print(upload_response)
 
 
 if __name__ == "__main__":

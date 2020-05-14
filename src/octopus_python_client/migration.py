@@ -120,7 +120,6 @@ class Migration:
             f"prepare {item_type_projects} {src_item.get(name_key)} for migrating to {self._dst_config.space_id}")
         src_item.pop(deployment_process_id_key, None)
         src_item.pop(variable_set_id_key, None)
-        self._dst_common.prepare_project_versioning_strategy(project=src_item)
 
     # we do not want to clone the child items first;
     # child items will be created automatically when parent item is created
@@ -213,7 +212,8 @@ class Migration:
             content = self._src_common.open_local_package(package_dict=src_package_dict)
         else:
             content = self._src_common.get_package(src_package_dict.get(id_key))
-        return self._dst_common.post_package(content=content)
+        file_name = Common.construct_package_name(package_dict=src_package_dict)
+        return self._dst_common.post_package(file_name=file_name, content=content)
 
     def _put_post_item_to_space(self, item_type, src_item_copy, src_item):
         src_id_value = src_item.get(id_key)

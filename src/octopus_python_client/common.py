@@ -308,13 +308,6 @@ class Common:
         if item:
             local_logger.info(pformat(item))
 
-    # TODO once the migration supports packages; we do not have to pre-process VersioningStrategy for cloning project
-    def prepare_project_versioning_strategy(self, project):
-        self.logger.warning(f"prepare project {project.get(name_key)} for cloning by removing packages from "
-                            f"{versioning_strategy_key}; once the migration supports packages; we can stop doing it")
-        project.get(versioning_strategy_key)[donor_package_key] = None
-        project.get(versioning_strategy_key)[donor_package_step_id_key] = None
-
     def get_list_ids_one_type(self, item_type):
         list_items = self.get_one_type_to_list(item_type=item_type)
         return [item.get(id_key) for item in list_items]
@@ -860,8 +853,6 @@ class Common:
         self.log_info_print(msg=f"cloning {item_type} {item_name} in space {self.config.space_id} based on remote item "
                                 f"{base_item_name}")
         base_item = self.get_single_item_by_name(item_type=item_type, item_name=base_item_name)
-        if item_type == item_type_projects:
-            self.prepare_project_versioning_strategy(project=base_item)
         # create a new item from the remote item
         base_item[name_key] = item_name
         item = self.post_single_item_save(item_type=item_type, payload=base_item)
@@ -1035,9 +1026,13 @@ class Common:
                                 f"{counter} seconds")
         return status
 
+    @staticmethod
+    def construct_package_name(package_dict):
+        return f"{package_dict.get(package_id_key)}.{package_dict.get(version_key)}" \
+               f"{package_dict.get(file_extension_key)}"
+
     def get_package_file(self, package_dict):
-        file_name = f"{package_dict.get(package_id_key)}.{package_dict.get(version_key)}" \
-                    f"{package_dict.get(file_extension_key)}"
+        file_name = Common.construct_package_name(package_dict=package_dict)
         return self.get_local_single_item_file(item_name=file_name, item_type=item_type_packages, no_ext=True)
 
     def open_local_package(self, package_dict):
@@ -1054,17 +1049,24 @@ class Common:
         except Exception as err:
             self.log_error_print(msg=f"Failed to get package {package_id} from space {self.config.space_id} on server "
                                      f"{self.config.endpoint} with {err}")
-            return b""
+            return None
 
     def save_package(self, package_dict):
+        if not isinstance(package_dict, dict):
+            self.log_error_print(msg=f"package information is missing and cannot save the package")
+            return
         content = self.get_package(package_id=package_dict.get(id_key))
+        if not content:
+            self.log_error_print(msg=f"the package {package_dict.get(id_key)} has no content and cannot be saved")
+            return
         package_file = self.get_package_file(package_dict)
         write_binary_file(local_file=package_file, content=content)
 
-    def post_package(self, content):
-        self.logger.info(f"post package to space {self.config.space_id} on server {self.config.endpoint}")
+    def post_package(self, file_name, content):
+        self.logger.info(f"post package {file_name} to space {self.config.space_id} on server {self.config.endpoint}")
         if self.config.overwrite:
             address = f"{item_type_packages}/{package_raw}?overwriteMode=OverwriteExisting"
         else:
             address = f"{item_type_packages}/{package_raw}?overwriteMode=IgnoreIfExists"
-        return self.request_octopus_item(address=address, operation=operation_post_file, files={file_key: content})
+        return self.request_octopus_item(address=address, operation=operation_post_file,
+                                         files={file_key: (file_name, content)})

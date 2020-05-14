@@ -77,31 +77,36 @@ def run():
                       "password": "guest", "pem": False}
     response = call_octopus(config=SimpleNamespace(**octopus_config), url_suffix="Spaces-1/environments")
     print(response)
+    package_name_version = "Phoenix.3.2"
     response = call_octopus(config=SimpleNamespace(**octopus_config),
-                            url_suffix="Spaces-1/packages/packages-OctoFX.Database.3.5.3047")
+                            url_suffix=f"Spaces-1/packages/packages-{package_name_version}")
     package_dict = response
+    print()
     print(package_dict)
     file_name = f"{package_dict.get('PackageId')}.{package_dict.get('Version')}{package_dict.get('FileExtension')}"
     print(file_name)
     content = call_octopus(config=SimpleNamespace(**octopus_config),
-                           url_suffix="Spaces-1/packages/packages-OctoFX.Database.3.5.3047/raw",
+                           url_suffix=f"Spaces-1/packages/packages-{package_name_version}/raw",
                            operation=operation_get_file)
     print(len(content))
-    file = open(file_name, "wb")
-    file.write(content)
-    file.close()
-    dst_octopus_config = {"endpoint": "http://localhost/api/", "api_key": "API-XXX", "pem": False}
-    package = {"file": open(file_name, 'rb')}
+
+    dst_octopus_config = {"endpoint": "http://localhost/api/", "api_key": "API-XXX",
+                          "pem": False}
+
     upload_response = call_octopus(config=SimpleNamespace(**dst_octopus_config),
                                    url_suffix="Spaces-1/packages/raw?overwriteMode=OverwriteExisting",
                                    # IgnoreIfExists
                                    operation=operation_post_file,
-                                   files={"file": content})
+                                   files={"file": (file_name, content)})
     print(upload_response)
+
+    file = open(file_name, "wb")
+    file.write(content)
+    file.close()
     upload_response = call_octopus(config=SimpleNamespace(**dst_octopus_config),
                                    url_suffix="Spaces-1/packages/raw?overwriteMode=IgnoreIfExists",
                                    operation=operation_post_file,
-                                   files=package)
+                                   files={"file": (file_name, open(file_name, 'rb'))})
     print(upload_response)
 
 

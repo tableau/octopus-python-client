@@ -308,6 +308,19 @@ class Common:
         if item:
             local_logger.info(pformat(item))
 
+    # TODO even after the migration supports packages; we still need to pop VersioningStrategy for cloning project
+    # It is a chicken and egg issue; when the project was cloned the first time, the deployment processes is empty;
+    # So the DonorPackageStepId which is a deployment process Actions id, is still a broken link, so need to remove;
+    # Once the deployment processes is cloned, we need to clone the project again with VersioningStrategy
+    # so I decide to keep removing VersioningStrategy for now, until we can run 2-pass project cloning
+    def prepare_project_versioning_strategy(self, project):
+        self.logger.warning(f"prepare project {project.get(name_key)} for cloning by removing packages from "
+                            f"{versioning_strategy_key}; {donor_package_step_id_key} "
+                            f"{project.get(versioning_strategy_key).get(donor_package_step_id_key)} is a broken link "
+                            f"before deployment processes is cloned")
+        project.get(versioning_strategy_key)[donor_package_key] = None
+        project.get(versioning_strategy_key)[donor_package_step_id_key] = None
+
     def get_list_ids_one_type(self, item_type):
         list_items = self.get_one_type_to_list(item_type=item_type)
         return [item.get(id_key) for item in list_items]
@@ -853,6 +866,8 @@ class Common:
         self.log_info_print(msg=f"cloning {item_type} {item_name} in space {self.config.space_id} based on remote item "
                                 f"{base_item_name}")
         base_item = self.get_single_item_by_name(item_type=item_type, item_name=base_item_name)
+        if item_type == item_type_projects:
+            self.prepare_project_versioning_strategy(project=base_item)
         # create a new item from the remote item
         base_item[name_key] = item_name
         item = self.post_single_item_save(item_type=item_type, payload=base_item)

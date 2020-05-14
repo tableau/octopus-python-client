@@ -120,6 +120,7 @@ class Migration:
             f"prepare {item_type_projects} {src_item.get(name_key)} for migrating to {self._dst_config.space_id}")
         src_item.pop(deployment_process_id_key, None)
         src_item.pop(variable_set_id_key, None)
+        self._dst_common.prepare_project_versioning_strategy(project=src_item)
 
     # we do not want to clone the child items first;
     # child items will be created automatically when parent item is created
@@ -257,7 +258,7 @@ class Migration:
                             f"overwrote {dst_item.get(id_key)} in {self._dst_config.space_id} successfully")
                 except Exception as err:
                     self._dst_common.log_error_print(
-                        local_logger=self.logger,
+                        local_logger=self.logger, item=src_item_copy,
                         msg=f"Failed to overwrite from {item_type} {src_item_name} {src_id_value} in space "
                             f"{self._src_config.space_id} to {dst_item.get(id_key)} in {self._dst_config.space_id} "
                             f"with {err}")
@@ -280,7 +281,7 @@ class Migration:
                         f"to space {self._dst_config.space_id} as {dst_item.get(id_key)} successfully")
             except Exception as err:
                 self._dst_common.log_error_print(
-                    local_logger=self.logger,
+                    local_logger=self.logger, item=src_item_copy,
                     msg=f"Failed to clone {item_type} {src_item_name} {src_id_value} from space "
                         f"{self._src_config.space_id} to space {self._dst_config.space_id} with {err}")
                 return None, False
@@ -516,7 +517,7 @@ class Migration:
                     f"{self._src_config.space_id} to {self._dst_config.space_id} as {dst_child_id} successfully")
         except Exception as err:
             self._dst_common.log_error_print(
-                local_logger=self.logger,
+                local_logger=self.logger, item=src_child_copy,
                 msg=f"Failed to overwrite {parent_type} {parent_name}'s {src_child_type} {src_child_id} from "
                     f"{self._src_config.space_id} to {self._dst_config.space_id} as {dst_child_id} with {err}")
 
@@ -581,7 +582,7 @@ class Migration:
         except Exception as err:
             dst_tenant_variables = self._dst_common.get_tenant_variables(tenant_id=dst_id)
             self._dst_common.log_error_print(
-                local_logger=self.logger,
+                local_logger=self.logger, item=src_tenant_variables_copy,
                 msg=f"Failed to overwrite {item_type_tenant_variables} from {item_type_tenants} {src_id} in "
                     f"{self._src_config.space_id} to {dst_id} in {self._dst_config.space_id} with {err}")
 
@@ -615,7 +616,7 @@ class Migration:
                             f"{self._dst_config.space_id} successfully")
                 except Exception as err:
                     self._dst_common.log_error_print(
-                        local_logger=self.logger,
+                        local_logger=self.logger, item=dst_tag_set,
                         msg=f"Failed to overwrite {item_type} {item_name} {item_id} from {self._src_config.space_id} to"
                             f" {self._dst_config.space_id} unsuccessfully with {err}")
             else:
@@ -637,7 +638,7 @@ class Migration:
                         f"{self._dst_config.space_id} successfully")
             except Exception as err:
                 self._dst_common.log_error_print(
-                    local_logger=self.logger,
+                    local_logger=self.logger, item=dst_tag_set,
                     msg=f"Failed to clone {item_type} {item_name} {item_id} from {self._src_config.space_id} to "
                         f"{self._dst_config.space_id} with {err}")
         self._src_id_vs_dst_id_dict[item_id] = item_id

@@ -1,59 +1,18 @@
 import argparse
 import copy
 import logging
-import os
 
-from octopus_python_client.common import Config, item_type_deployment_processes, outer_space_download_types, \
-    inside_space_download_types, deployment_process_id_key, steps_key, api_key_key, octopus_endpoint_key, \
-    octopus_name_key, user_name_key, password_key, double_hyphen, Common, runbook_process_prefix, octopus_demo_site
+from octopus_python_client.actions import Actions
+from octopus_python_client.common import item_type_deployment_processes, outer_space_download_types, steps_key, \
+    inside_space_download_types, deployment_process_id_key, Common
+from octopus_python_client.config import Config
 from octopus_python_client.deployment_processes import DeploymentProcesses
 from octopus_python_client.migration import Migration
 from octopus_python_client.projects import Projects
 from octopus_python_client.release_deployment import ReleaseDeployment
 from octopus_python_client.utilities.helper import log_raise_value_error
 
-logging.basicConfig(filename=os.path.join(os.getcwd(), "octopus_python_client.log"),
-                    filemode="a",
-                    format="%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s",
-                    datefmt="%H:%M:%S",
-                    level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-class Actions:
-    ACTION_GET_SPACES = "get_spaces"  # get all types
-    ACTION_GET_TYPES = "get_types"  # get all types
-    ACTION_GET_TYPE = "get_type"  # get all items under one type
-    ACTION_DELETE_TYPE = "delete_type"  # delete all items under one type
-    # delete all items under specified types (if no types specified, delete all cloneable types in reverse order)
-    ACTION_DELETE_TYPES = "delete_types"
-    ACTION_GET = "get"  # get one item
-    ACTION_UPDATE = "update"  # update one item
-    ACTION_UPDATE_MERGE = "update_merge"  # update one item and merge the existing sub-items
-    ACTION_CREATE = "create"  # create a new item
-    ACTION_CLONE = "clone"  # clone a new item
-    ACTION_DELETE = "delete"  # delete an item
-    ACTION_GET_CHILD = "get_child"  # get a child item
-    ACTION_UPDATE_CHILD = "update_child"  # update a child item
-    ACTION_CLONE_CHILD = "clone_child"  # clone a child item
-    ACTION_CLONE_PROCESS_STEP = "clone_process_step"  # clone a project process step
-    ACTION_DELETE_PROCESS_STEP = "delete_process_step"  # delete a project process step
-    ACTION_CLONE_PROJECT = "clone_project"  # clone a project including process
-    ACTION_DELETE_PROJECT = "delete_project"  # delete a project including process
-    ACTION_DELETE_PROJECTS = "delete_projects"  # delete projects inside project groups and excluding projects
-    ACTION_GET_PROJECT = "get_project"  # get a project including process
-    ACTION_PROJECT_UPDATE_VARIABLE_SETS = "update_variable_sets"  # update the variable sets for a project
-    # clone Octopus single item from one space to another space
-    ACTION_CLONE_SPACE_ITEM = "clone_space_item"
-    # clone a few types from one space to another space
-    ACTION_CLONE_SPACE = "clone_space"
-    # clone a few types from one server to another server
-    ACTION_CLONE_SERVER = "clone_server"
-    ACTION_TASK_STATUS = "task_status"
-    ACTION_WAIT_TASK = "wait_task"
-    ACTION_CREATE_RELEASE = "create_release"
-    ACTION_CREATE_DEPLOYMENT = "create_deployment"
-    ACTION_CREATE_RELEASE_DEPLOYMENT = "create_release_deployment"
 
 
 class OctopusClient:
@@ -68,18 +27,18 @@ class OctopusClient:
     @staticmethod
     def _parse_args():
         parser = argparse.ArgumentParser()
-        parser.add_argument("-o", double_hyphen + octopus_endpoint_key, help="octopus endpoint")
+        parser.add_argument("-o", "--endpoint", help="octopus endpoint")
         parser.add_argument("-s", "--space_id_name", help="octopus space id or name")
         parser.add_argument("-m", "--pem", help="octopus endpoint root pem file path")
         parser.add_argument("-sps", "--spaces",
                             help='list of octopus space id or name, like "my space,Spaces-1,Spaces-2"')
-        parser.add_argument("-n", double_hyphen + octopus_name_key,
+        parser.add_argument("-n", "--octopus_name",
                             help="customized octopus server name, used for folder name")
-        parser.add_argument("-k", double_hyphen + api_key_key,
+        parser.add_argument("-k", "--api_key",
                             help="api key for octopus; either api_key or user_name and password are required")
-        parser.add_argument("-user", double_hyphen + user_name_key,
+        parser.add_argument("-user", "--user_name",
                             help="user_name for octopus; either api_key or user_name and password are required")
-        parser.add_argument("-pass", double_hyphen + password_key,
+        parser.add_argument("-pass", "--password",
                             help="password for octopus; either api_key or user_name and password are required")
         parser.add_argument("-sre", "--source_endpoint", help="source octopus endpoint for clone")
         parser.add_argument("-srn", "--source_octopus_name",
@@ -93,8 +52,8 @@ class OctopusClient:
         parser.add_argument("-srs", "--source_space_id_name",
                             help="source octopus space id or name for clone/migration")
         parser.add_argument("-srm", "--source_pem", help="source octopus endpoint root pem file path")
-        parser.add_argument("-lsr", "--local_source", help="if present, local_source = True; the source server/space "
-                                                           "data are stored as YAML files locally", action="store_true")
+        parser.add_argument("-ld", "--local_data", help="if present, local_data = True; the source server/space "
+                                                        "data are stored as YAML files locally", action="store_true")
         parser.add_argument("-a", "--action", help=str(Actions.__dict__.values()), required=True)
         parser.add_argument("-ow", "--overwrite", help="if present, overwrite = True", action="store_true")
         parser.add_argument("-ns", "--no_stdout", help="if present, no_stdout = True, means no stdout",
@@ -151,11 +110,6 @@ class OctopusClient:
         assert self._target_config.endpoint.endswith("/api/"), \
             f"octopus endpoint must end with /api/; {self._target_config.endpoint} is invalid"
 
-        # TODO Octopus demo site bug: https://demo.octopus.com/api/runbookprocess
-        # newer site uses https://server/api/runbookprocesses (runbookprocess vs runbookprocesses)
-        if octopus_demo_site == self._target_config.endpoint:
-            self._target_config.item_type_runbook_processes = runbook_process_prefix
-
         if args.octopus_name:
             self._target_config.octopus_name = args.octopus_name
         assert self._target_config.octopus_name, "octopus_name must not be empty"
@@ -194,17 +148,12 @@ class OctopusClient:
             self._source_config = copy.deepcopy(self._target_config)
             self._source_common = Common(config=self._source_config)
 
-            if args.local_source:
-                self._source_config.local_source = args.local_source
+            if args.local_data:
+                self._source_config.local_data = args.local_data
             if args.source_endpoint:
                 self._source_config.endpoint = args.source_endpoint
-            assert self._source_config.local_source or self._source_config.endpoint.endswith("/api/"), \
+            assert self._source_config.local_data or self._source_config.endpoint.endswith("/api/"), \
                 f"octopus endpoint must end with /api/; {self._source_config.endpoint} is invalid"
-
-            # TODO Octopus demo site bug: https://demo.octopus.com/api/runbookprocess
-            # newer site uses https://server/api/runbookprocesses (runbookprocess vs runbookprocesses)
-            if octopus_demo_site == self._source_config.endpoint:
-                self._source_config.item_type_runbook_processes = runbook_process_prefix
 
             if args.source_octopus_name:
                 self._source_config.octopus_name = args.source_octopus_name
@@ -237,7 +186,7 @@ class OctopusClient:
                 if self._source_config.space_id:
                     self._target_common.log_info_print(msg=f"The source octopus space_id is: "
                                                            f"{self._source_config.space_id}")
-                elif self._source_config.local_source:
+                elif self._source_config.local_data:
                     self._target_common.log_info_print(msg=f"{args.action} from nonexistent source space "
                                                            f"{args.source_space_id_name}")
                     self._source_config.space_id = args.source_space_id_name

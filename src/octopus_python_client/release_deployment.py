@@ -9,6 +9,7 @@ from octopus_python_client.common import item_type_deployment_processes, item_ty
     item_type_releases, item_type_deployments, item_type_tenants, item_type_environments, tenant_id_key, newline_sign, \
     environment_id_key, release_id_key, comments_key, release_versions_key, url_prefix_key, dot_sign, sha_key, \
     author_key, latest_commit_sha_key, title_key
+from octopus_python_client.config import Config
 from octopus_python_client.utilities.helper import replace_list_new_value, parse_string, find_item
 from octopus_python_client.utilities.send_requests_to_octopus import operation_post
 
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class ReleaseDeployment:
-    def __init__(self, config, project_name, channel_name=None, notes=None):
+    def __init__(self, config: Config, project_name, channel_name=None, notes=None):
         self._config = config
         self._common = Common(config=self._config)
 
@@ -221,7 +222,7 @@ class ReleaseDeployment:
         return self._release_response
 
     @staticmethod
-    def create_deployment_direct(config, release_id, environment_name, tenant_name, comments=None):
+    def create_deployment_direct(config: Config, release_id, environment_name, tenant_name, comments=None):
         logger.info(f"creating a deployment for {release_id} in space {config.space_id} with environment "
                     f"{environment_name}, tenant {tenant_name} and comments: {comments}")
         common = Common(config=config)
@@ -262,7 +263,7 @@ class ReleaseDeployment:
         return self._release_response
 
     @staticmethod
-    def create_release_direct(config, release_version, project_name, channel_name=None, notes=None):
+    def create_release_direct(config: Config, release_version, project_name, channel_name=None, notes=None):
         common = Common(config=config)
         release = ReleaseDeployment(config=config, project_name=project_name, channel_name=channel_name, notes=notes)
         release.create_release(release_version=release_version)
@@ -270,8 +271,8 @@ class ReleaseDeployment:
         return release
 
     @staticmethod
-    def create_release_deployment(config, release_version, project_name, comments, channel_name=None, notes=None,
-                                  environment_name=None, tenant_name=None):
+    def create_release_deployment(config: Config, release_version, project_name, comments, channel_name=None,
+                                  notes=None, environment_name=None, tenant_name=None):
         release = ReleaseDeployment.create_release_direct(
             config=config, release_version=release_version, project_name=project_name, channel_name=channel_name,
             notes=notes)

@@ -1,9 +1,9 @@
 import logging
-from types import SimpleNamespace
 
 import requests
 import urllib3
 
+from octopus_python_client.config import Config
 from octopus_python_client.utilities.helper import log_raise_value_error
 
 operation_delete = "delete"
@@ -23,7 +23,7 @@ x_octopus_api_key_key = "X-Octopus-ApiKey"
 logger = logging.getLogger(__name__)
 
 
-def call_octopus(config, url_suffix=None, operation=None, payload=None, files=None):
+def call_octopus(config: Config, url_suffix=None, operation=None, payload=None, files=None):
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     url = config.endpoint + url_suffix if url_suffix else config.endpoint
     operation = operation if operation else operation_get
@@ -73,27 +73,28 @@ def call_octopus(config, url_suffix=None, operation=None, payload=None, files=No
 # TODO for testing purpose, to be removed
 def run():
     print("==================== test octopus http requests ===================")
-    octopus_config = {"endpoint": "https://demo.octopusdeploy.com/api/", "api_key": None, "user_name": "guest",
-                      "password": "guest", "pem": False}
-    response = call_octopus(config=SimpleNamespace(**octopus_config), url_suffix="Spaces-1/environments")
+    # octopus_config = {"endpoint": "https://demo.octopusdeploy.com/api/", "api_key": None, "user_name": "guest",
+    #                   "password": "guest", "pem": False}
+    response = call_octopus(config=Config(), url_suffix="Spaces-1/environments")
     print(response)
-    package_name_version = "Phoenix.3.2"
-    response = call_octopus(config=SimpleNamespace(**octopus_config),
+    package_name_version = "SampleFunction.1.0.1"
+    response = call_octopus(config=Config(),
                             url_suffix=f"Spaces-1/packages/packages-{package_name_version}")
     package_dict = response
     print()
     print(package_dict)
     file_name = f"{package_dict.get('PackageId')}.{package_dict.get('Version')}{package_dict.get('FileExtension')}"
     print(file_name)
-    content = call_octopus(config=SimpleNamespace(**octopus_config),
+    content = call_octopus(config=Config(),
                            url_suffix=f"Spaces-1/packages/packages-{package_name_version}/raw",
                            operation=operation_get_file)
     print(len(content))
 
-    dst_octopus_config = {"endpoint": "http://localhost/api/", "api_key": "API-XXX",
-                          "pem": False}
+    dst_octopus_config = Config()
+    dst_octopus_config.endpoint = "http://localhost/api/"
+    dst_octopus_config.api_key = "API-XXX"
 
-    upload_response = call_octopus(config=SimpleNamespace(**dst_octopus_config),
+    upload_response = call_octopus(config=dst_octopus_config,
                                    url_suffix="Spaces-1/packages/raw?overwriteMode=OverwriteExisting",
                                    # IgnoreIfExists
                                    operation=operation_post_file,
@@ -103,7 +104,7 @@ def run():
     file = open(file_name, "wb")
     file.write(content)
     file.close()
-    upload_response = call_octopus(config=SimpleNamespace(**dst_octopus_config),
+    upload_response = call_octopus(config=Config(),
                                    url_suffix="Spaces-1/packages/raw?overwriteMode=IgnoreIfExists",
                                    operation=operation_post_file,
                                    files={"file": (file_name, open(file_name, 'rb'))})

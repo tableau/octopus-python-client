@@ -14,13 +14,14 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     item_type_scoped_user_roles, user_role_id_key, runbook_process_prefix, published_runbook_snapshot_id_key, \
     item_id_prefix_to_type_dict, positive_integer_regex, team_id_key, outer_space_clone_types, item_type_users, \
     item_type_spaces, default_password, is_service_key, space_managers_teams, item_type_teams, package_id_key
+from octopus_python_client.config import Config
 from octopus_python_client.utilities.helper import find_item, save_file, find_matched_sub_list, log_raise_value_error
 from octopus_python_client.utilities.send_requests_to_octopus import login_payload_user_name_key, \
     login_payload_password_key
 
 
 class Migration:
-    def __init__(self, src_config, dst_config, logger=None):
+    def __init__(self, src_config: Config, dst_config: Config, logger: logging.Logger = None):
         self.logger = logger if logger else logging.getLogger(self.__class__.__name__)
         self._src_config = src_config
         self._dst_config = dst_config
@@ -205,7 +206,7 @@ class Migration:
         return self._create_item_to_space(item_type=item_type, src_item=src_item)
 
     def _clone_package(self, src_package_dict):
-        if self._src_config.local_source:
+        if self._src_config.local_data:
             self._dst_common.log_info_print(
                 local_logger=self.logger,
                 msg=f"loading file from {self._src_config.octopus_name}/{self._src_config.space_id}/"
@@ -458,12 +459,7 @@ class Migration:
             pass
             # self.logger.info(f"the type is {type(dict_list)} and value is {dict_list}; skip it")
 
-    # TODO dst_child_type should be the same as src_child_type, however
-    # Octopus demo site bug: https://demo.octopus.com/api/runbookprocess
-    # newer site uses https://server/api/runbookprocesses (runbookprocess vs runbookprocesses)
-    def _clone_child(self, src_parent_id, dst_parent_id, dst_child_type, child_id_key, src_child_type=None):
-        if not src_child_type:
-            src_child_type = dst_child_type
+    def _clone_child(self, src_parent_id, dst_parent_id, child_type, child_id_key):
         # source item
         parent_type = self._src_id_type_dict.get(src_parent_id)
         src_parent = self._src_id_payload_dict.get(src_parent_id)
@@ -486,10 +482,9 @@ class Migration:
             if not src_child:
                 self.logger.warning(
                     f"{src_child_id} does not exist in the memory, so get it from {self._src_config.space_id}")
-                src_child = self._src_common.get_single_item_by_name_or_id(item_type=src_child_type,
-                                                                           item_id=src_child_id)
+                src_child = self._src_common.get_single_item_by_name_or_id(item_type=child_type, item_id=src_child_id)
                 self._src_id_payload_dict[src_child_id] = src_child
-            dst_child = self._dst_common.get_single_item_by_name_or_id(item_type=dst_child_type, item_id=dst_child_id)
+            dst_child = self._dst_common.get_single_item_by_name_or_id(item_type=child_type, item_id=dst_child_id)
         except Exception as err:
             self._dst_common.log_error_print(local_logger=self.logger, msg=err)
             return dst_child_id
@@ -510,15 +505,15 @@ class Migration:
 
         # sometimes, overwrite may not be successful due to different reasons, we can skip in most cases
         try:
-            dst_child = self._dst_common.put_single_item(item_type=dst_child_type, payload=src_child_copy)
+            dst_child = self._dst_common.put_single_item(item_type=child_type, payload=src_child_copy)
             self._dst_common.log_info_print(
                 local_logger=self.logger,
-                msg=f"Finished overwriting {parent_type} {parent_name}'s {src_child_type} {src_child_id} from "
+                msg=f"Finished overwriting {parent_type} {parent_name}'s {child_type} {src_child_id} from "
                     f"{self._src_config.space_id} to {self._dst_config.space_id} as {dst_child_id} successfully")
         except Exception as err:
             self._dst_common.log_error_print(
                 local_logger=self.logger, item=src_child_copy,
-                msg=f"Failed to overwrite {parent_type} {parent_name}'s {src_child_type} {src_child_id} from "
+                msg=f"Failed to overwrite {parent_type} {parent_name}'s {child_type} {src_child_id} from "
                     f"{self._src_config.space_id} to {self._dst_config.space_id} as {dst_child_id} with {err}")
 
         self._dst_id_payload_dict[dst_child_id] = dst_child
@@ -533,13 +528,13 @@ class Migration:
             local_logger=self.logger,
             msg=f"clone {item_type_deployment_processes} from {item_type_projects} {src_id} in "
                 f"{self._src_config.space_id} to {dst_id} in {self._dst_config.space_id}")
-        self._clone_child(src_parent_id=src_id, dst_parent_id=dst_id, dst_child_type=item_type_deployment_processes,
+        self._clone_child(src_parent_id=src_id, dst_parent_id=dst_id, child_type=item_type_deployment_processes,
                           child_id_key=deployment_process_id_key)
         self._dst_common.log_info_print(
             local_logger=self.logger,
             msg=f"clone {item_type_variables} from {item_type_projects} {src_id} in {self._src_config.space_id} "
                 f"to {dst_id} in {self._dst_config.space_id}")
-        self._clone_child(src_parent_id=src_id, dst_parent_id=dst_id, dst_child_type=item_type_variables,
+        self._clone_child(src_parent_id=src_id, dst_parent_id=dst_id, child_type=item_type_variables,
                           child_id_key=variable_set_id_key)
 
     def _post_process_library_variable_set(self, src_id, dst_id):
@@ -547,7 +542,7 @@ class Migration:
             local_logger=self.logger,
             msg=f"clone {item_type_variables} from {item_type_library_variable_sets} {src_id} in "
                 f"{self._src_config.space_id} to {dst_id} in {self._dst_config.space_id}")
-        self._clone_child(src_parent_id=src_id, dst_parent_id=dst_id, dst_child_type=item_type_variables,
+        self._clone_child(src_parent_id=src_id, dst_parent_id=dst_id, child_type=item_type_variables,
                           child_id_key=variable_set_id_key)
 
     def _post_process_runbook(self, src_id, dst_id, item_type_runbook_processes=None):
@@ -556,8 +551,7 @@ class Migration:
             msg=f"clone {item_type_runbook_processes} from {item_type_runbooks} {src_id} in "
                 f"{self._src_config.space_id} to {dst_id} in {self._dst_config.space_id}")
         self._clone_child(src_parent_id=src_id, dst_parent_id=dst_id, child_id_key=runbook_process_id_key,
-                          dst_child_type=self._dst_config.item_type_runbook_processes,
-                          src_child_type=self._src_config.item_type_runbook_processes)
+                          child_type=item_type_runbook_processes)
 
     # tenant variables is special and its id is also tenant id, such as "Tenants-401"
     # so you have to use a separate map to store the tenants variables
@@ -647,7 +641,7 @@ class Migration:
         return item_id
 
     def _load_types(self):
-        if self._src_config.local_source:
+        if self._src_config.local_data:
             self._dst_common.log_info_print(
                 local_logger=self.logger,
                 msg=f"Reading files {self._all_types} from local source {self._src_config.space_id}...")
@@ -660,7 +654,7 @@ class Migration:
             self._dst_common.log_info_print(local_logger=self.logger,
                                             msg=f"loading type {item_type} from space {self._src_config.space_id}")
             # for cloning space from another Octopus server
-            if self._src_config.local_source:
+            if self._src_config.local_data:
                 self.logger.info(
                     f"Loading {item_type} in source local source {self._src_config.space_id} from the local file...")
                 src_list_items = self._src_common.get_list_items_from_file(item_type=item_type)
@@ -670,7 +664,7 @@ class Migration:
                 src_list_items = self._src_common.get_one_type_to_list(item_type=item_type)
             selected_src_list_items = []
             for src_item in src_list_items:
-                if not actual_src_space_id and self._src_config.local_source and item_type == item_type_projects \
+                if not actual_src_space_id and self._src_config.local_data and item_type == item_type_projects \
                         and src_item.get(space_id_key):
                     actual_src_space_id = src_item.get(space_id_key)
                     self.logger.info(f"the actual source space id is {actual_src_space_id}; the local one is "
@@ -693,7 +687,7 @@ class Migration:
                 else:
                     log_raise_value_error(local_logger=self.logger, item=src_item, err=f"{item_type} is not valid")
             self._type_src_list_items_dict[item_type] = selected_src_list_items
-        if self._src_config.local_source and not actual_src_space_id:
+        if self._src_config.local_data and not actual_src_space_id:
             log_raise_value_error(local_logger=self.logger,
                                   err=f"Could not find an actual space id inside the local source "
                                       f"{self._src_config.space_id}")
@@ -729,7 +723,7 @@ class Migration:
 
         actual_src_space_id = self._load_types()
 
-        if self._src_config.local_source:
+        if self._src_config.local_data:
             self._src_id_vs_dst_id_dict[actual_src_space_id] = self._dst_config.space_id
         else:
             self._src_id_vs_dst_id_dict[self._src_config.space_id] = self._dst_config.space_id

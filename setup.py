@@ -3,11 +3,11 @@ from setuptools import setup, find_packages
 with open("README.md", "r") as readme_file:
     readme = readme_file.read()
 
-requirements = ["requests>=2.20.0", "PyYAML>=5.1"]
+requirements = ["requests>=2.20.0", "PyYAML>=5.1", "urllib3"]
 
 setup(
     name="octopus-python-client",
-    version="1.4.8",
+    version="1.4.9",
     author="Tony Li",
     author_email="tonybest@gmail.com",
     description="Python script to manage Octopus deploy servers through the Octopus Restful APIs",

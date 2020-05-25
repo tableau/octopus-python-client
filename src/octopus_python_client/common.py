@@ -4,6 +4,7 @@ import os
 import time
 from pprint import pformat
 
+from octopus_python_client.config import Config
 from octopus_python_client.utilities.helper import compare_overwrite, find_item, load_file, save_file, \
     is_local_same_as_remote2, write_binary_file
 from octopus_python_client.utilities.send_requests_to_octopus import call_octopus, operation_get, operation_post, \
@@ -19,12 +20,9 @@ dot_sign = "."
 double_hyphen = "--"
 environments_prefix = "Environments"
 executing_string = "Executing"
-file_configuration = "configuration.json"
 folder_outer_spaces = "outer_spaces"
-folder_configurations = "configurations"
 hyphen_sign = "-"
 newline_sign = "\n"
-octopus_demo_site = "https://demo.octopusdeploy.com/api/"
 package_raw = "raw"
 positive_integer_regex = "-[1-9][0-9]*$"
 runbook_process_prefix = "RunbookProcess"
@@ -40,7 +38,6 @@ yaml_ext = ".yaml"
 # dict keys
 action_name_key = "ActionName"
 actions_key = 'Actions'
-api_key_key = "api_key"
 author_key = "author"
 canonical_tag_name_key = "CanonicalTagName"
 channel_id_key = "ChannelId"
@@ -66,14 +63,11 @@ name_key = 'Name'
 new_value_key = "NewValue"
 next_version_increment_key = "NextVersionIncrement"
 no_stdout_key = "no_stdout"
-octopus_endpoint_key = "endpoint"
-octopus_name_key = "octopus_name"
 owner_id_key = "OwnerId"
 overwrite_key = "overwrite"
 package_id_key = "PackageId"
 package_reference_name_key = "PackageReferenceName"
 packages_key = "Packages"
-password_key = "password"
 project_group_id_key = "ProjectGroupId"
 project_id_key = "ProjectId"
 published_runbook_snapshot_id_key = "PublishedRunbookSnapshotId"
@@ -99,7 +93,6 @@ timestamp_key = "timestamp"
 title_key = "title"
 token_key = "Token"
 url_prefix_key = "url_prefix"
-user_name_key = "user_name"
 user_role_id_key = "UserRoleId"
 value_key = "Value"
 variables_key = "Variables"
@@ -243,41 +236,8 @@ item_type_sub_item_map = {item_type_tag_sets: (tags_key, canonical_tag_name_key)
 item_id_prefix_to_type_dict = {environments_prefix: item_type_environments, tenants_prefix: item_type_tenants}
 
 
-class Config:
-    def __init__(self):
-        self.endpoint = None
-        self.octopus_name = None
-        self.api_key = None
-        self.user_name = None
-        self.password = None
-        self.space_id = None
-        self.overwrite = False
-        self.no_stdout = False
-        self.local_source = False
-        self.package = False
-        self.current_path = None
-        self.pem = False
-        # TODO Octopus demo site bug: https://demo.octopus.com/api/runbookprocess
-        # newer site uses https://server/api/runbookprocesses (runbookprocess vs runbookprocesses)
-        self.item_type_runbook_processes = item_type_runbook_processes
-        self.get_config()
-
-    def get_config(self):
-        code_path = os.path.dirname(os.path.abspath(__file__))
-        config_file = os.path.join(code_path, folder_configurations, file_configuration)
-        config_dict = load_file(config_file)
-        self.endpoint = config_dict.get(octopus_endpoint_key)
-        self.octopus_name = config_dict.get(octopus_name_key)
-        self.api_key = config_dict.get(api_key_key)
-        self.user_name = config_dict.get(user_name_key)
-        self.password = config_dict.get(password_key)
-        self.overwrite = config_dict.get(overwrite_key)
-        self.no_stdout = config_dict.get(no_stdout_key)
-        self.current_path = os.getcwd()
-
-
 class Common:
-    def __init__(self, config, logger=None):
+    def __init__(self, config: Config, logger: logging.Logger = None):
         self.config = config
         self.logger = logger if logger else logging.getLogger(self.__class__.__name__)
 
@@ -325,9 +285,12 @@ class Common:
         list_items = self.get_one_type_to_list(item_type=item_type)
         return [item.get(id_key) for item in list_items]
 
+    def get_list_spaces(self):
+        all_spaces = call_octopus(config=self.config, url_suffix=item_type_spaces)
+        return self.get_list_items_from_all_items(all_items=all_spaces)
+
     def verify_space(self, space_id_name):
-        all_spaces = self.request_octopus_item(address=item_type_spaces)
-        list_spaces = self.get_list_items_from_all_items(all_items=all_spaces)
+        list_spaces = self.get_list_spaces()
         space = find_item(lst=list_spaces, key=id_key, value=space_id_name)
         if space:
             return space.get(id_key)
@@ -358,33 +321,33 @@ class Common:
         parent_name = parent_name.replace(slash_sign, underscore_sign)
         child_type = child_type.replace(slash_sign, underscore_sign)
         if self.config.space_id:
-            return os.path.join(self.config.current_path, self.config.octopus_name, self.config.space_id, child_type,
+            return os.path.join(self.config.work_path, self.config.octopus_name, self.config.space_id, child_type,
                                 parent_name + underscore_sign + child_type + yaml_ext)
         else:
-            return os.path.join(self.config.current_path, self.config.octopus_name, folder_outer_spaces, child_type,
+            return os.path.join(self.config.work_path, self.config.octopus_name, folder_outer_spaces, child_type,
                                 parent_name + underscore_sign + child_type + yaml_ext)
 
-    # get the local single item file from self.config.current_path, space_id, item type, file_name;
+    # get the local single item file from self.config.work_path, space_id, item type, file_name;
     # for spaces files, no space_id needed
     def get_local_single_item_file(self, item_name, item_type, no_ext=False):
         item_type = item_type.replace(slash_sign, underscore_sign)
         item_name = item_name.replace(slash_sign, underscore_sign)
         if self.config.space_id:
-            return os.path.join(self.config.current_path, self.config.octopus_name, self.config.space_id, item_type,
+            return os.path.join(self.config.work_path, self.config.octopus_name, self.config.space_id, item_type,
                                 item_name + ("" if no_ext else yaml_ext))
         else:
-            return os.path.join(self.config.current_path, self.config.octopus_name, folder_outer_spaces, item_type,
+            return os.path.join(self.config.work_path, self.config.octopus_name, folder_outer_spaces, item_type,
                                 item_name + ("" if no_ext else yaml_ext))
 
-    # get the local all items file from self.config.current_path, space_id, item type;
+    # get the local all items file from self.config.work_path, space_id, item type;
     # for spaces files, no space_id needed
     def get_local_all_items_file(self, item_type):
         item_type_name = item_type.replace(slash_sign, underscore_sign)
         if self.config.space_id:
-            return os.path.join(self.config.current_path, self.config.octopus_name, self.config.space_id,
+            return os.path.join(self.config.work_path, self.config.octopus_name, self.config.space_id,
                                 item_type_name, all_underscore + item_type_name + yaml_ext)
         else:
-            return os.path.join(self.config.current_path, self.config.octopus_name, folder_outer_spaces, item_type_name,
+            return os.path.join(self.config.work_path, self.config.octopus_name, folder_outer_spaces, item_type_name,
                                 all_underscore + item_type_name + yaml_ext)
 
     # get local item file smartly; three possibilities

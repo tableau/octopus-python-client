@@ -106,7 +106,7 @@ class OctopusClient:
 
     def _process_args_to_configs(self):
         args = self._parse_args()
-        if not args.action:
+        if not args.action or args.action == Actions.ACTION_GUI:
             MainGUI().set_gui()
             sys.exit()
 

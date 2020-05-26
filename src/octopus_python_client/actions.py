@@ -1,4 +1,5 @@
 class Actions:
+    ACTION_GUI = "gui"  # start Octopus python client GUI
     ACTION_GET_SPACES = "get_spaces"  # get multiple spaces
     ACTION_GET_TYPES = "get_types"  # get all types
     ACTION_GET_TYPE = "get_type"  # get all items_dict under one type

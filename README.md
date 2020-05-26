@@ -29,7 +29,7 @@ start Octopus python client GUI
 ```
 octopus_python_client
 ```
-get all configurations and settings from all spaces at https://demo.octopusdeploy.com/api/
+get all configurations and settings from all spaces at https://samples.octopus.app/api/
 ```
 octopus_python_client -a=get_spaces
 ```

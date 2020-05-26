@@ -1,12 +1,14 @@
 import argparse
 import copy
 import logging
+import sys
 
 from octopus_python_client.actions import Actions
 from octopus_python_client.common import item_type_deployment_processes, outer_space_download_types, steps_key, \
     inside_space_download_types, deployment_process_id_key, Common
 from octopus_python_client.config import Config
 from octopus_python_client.deployment_processes import DeploymentProcesses
+from octopus_python_client.main_gui import MainGUI
 from octopus_python_client.migration import Migration
 from octopus_python_client.projects import Projects
 from octopus_python_client.release_deployment import ReleaseDeployment
@@ -32,7 +34,7 @@ class OctopusClient:
         parser.add_argument("-m", "--pem", help="octopus endpoint root pem file path")
         parser.add_argument("-sps", "--spaces",
                             help='list of octopus space id or name, like "my space,Spaces-1,Spaces-2"')
-        parser.add_argument("-n", "--octopus_name",
+        parser.add_argument("-d", "--data_path",
                             help="customized octopus server name, used for folder name")
         parser.add_argument("-k", "--api_key",
                             help="api key for octopus; either api_key or user_name and password are required")
@@ -41,7 +43,7 @@ class OctopusClient:
         parser.add_argument("-pass", "--password",
                             help="password for octopus; either api_key or user_name and password are required")
         parser.add_argument("-sre", "--source_endpoint", help="source octopus endpoint for clone")
-        parser.add_argument("-srn", "--source_octopus_name",
+        parser.add_argument("-srd", "--source_data_path",
                             help="user's source octopus server name, used for folder name to store the local files")
         parser.add_argument("-srk", "--source_api_key",
                             help="api key for octopus; either api_key or user_name and password are required")
@@ -54,7 +56,7 @@ class OctopusClient:
         parser.add_argument("-srm", "--source_pem", help="source octopus endpoint root pem file path")
         parser.add_argument("-ld", "--local_data", help="if present, local_data = True; the source server/space "
                                                         "data are stored as YAML files locally", action="store_true")
-        parser.add_argument("-a", "--action", help=str(Actions.__dict__.values()), required=True)
+        parser.add_argument("-a", "--action", help=str(Actions.__dict__.values()))
         parser.add_argument("-ow", "--overwrite", help="if present, overwrite = True", action="store_true")
         parser.add_argument("-ns", "--no_stdout", help="if present, no_stdout = True, means no stdout",
                             action="store_true")
@@ -104,15 +106,14 @@ class OctopusClient:
 
     def _process_args_to_configs(self):
         args = self._parse_args()
+        if not args.action:
+            MainGUI().set_gui()
+            sys.exit()
 
         if args.endpoint:
             self._target_config.endpoint = args.endpoint
         assert self._target_config.endpoint.endswith("/api/"), \
             f"octopus endpoint must end with /api/; {self._target_config.endpoint} is invalid"
-
-        if args.octopus_name:
-            self._target_config.octopus_name = args.octopus_name
-        assert self._target_config.octopus_name, "octopus_name must not be empty"
 
         if args.api_key:
             self._target_config.api_key = args.api_key
@@ -155,14 +156,13 @@ class OctopusClient:
             assert self._source_config.local_data or self._source_config.endpoint.endswith("/api/"), \
                 f"octopus endpoint must end with /api/; {self._source_config.endpoint} is invalid"
 
-            if args.source_octopus_name:
-                self._source_config.octopus_name = args.source_octopus_name
-            assert self._source_config.octopus_name, "source octopus_name must not be empty"
+            if args.source_data_path:
+                self._source_config.data_path = args.source_data_path
             if self._target_config.endpoint != self._source_config.endpoint \
-                    and self._target_config.octopus_name == self._source_config.octopus_name:
+                    and self._target_config.data_path == self._source_config.data_path:
                 raise ValueError(f"the source Octopus server {self._source_config.endpoint} and the target "
                                  f"Octopus server {self._target_config.endpoint} cannot use the same local "
-                                 f"folder name {self._target_config.octopus_name}")
+                                 f"path {self._target_config.data_path}")
 
             if args.source_api_key:
                 if args.source_api_key.startswith("API-"):

@@ -10,10 +10,11 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     item_type_tenant_variables, canonical_tag_name_key, item_type_tags, tenant_id_key, item_type_migration, space_map, \
     item_type_tenants, slash_sign, underscore_sign, item_type_feeds, secret_key_key, new_value_key, hyphen_sign, \
     item_type_channels, project_id_key, item_type_releases, item_type_artifacts, file_name_key, item_type_runbooks, \
-    runbook_process_id_key, item_type_accounts, token_key, comma_sign, space_id_key, item_type_packages, \
+    runbook_process_id_key, item_type_accounts, token_key, space_id_key, item_type_packages, \
     item_type_scoped_user_roles, user_role_id_key, runbook_process_prefix, published_runbook_snapshot_id_key, \
     item_id_prefix_to_type_dict, positive_integer_regex, team_id_key, outer_space_clone_types, item_type_users, \
-    item_type_spaces, default_password, is_service_key, space_managers_teams, item_type_teams, package_id_key
+    item_type_spaces, default_password, is_service_key, space_managers_teams, item_type_teams, package_id_key, \
+    comma_sign
 from octopus_python_client.config import Config
 from octopus_python_client.utilities.helper import find_item, save_file, find_matched_sub_list, log_raise_value_error
 from octopus_python_client.utilities.send_requests_to_octopus import login_payload_user_name_key, \
@@ -209,7 +210,7 @@ class Migration:
         if self._src_config.local_data:
             self._dst_common.log_info_print(
                 local_logger=self.logger,
-                msg=f"loading file from {self._src_config.octopus_name}/{self._src_config.space_id}/"
+                msg=f"loading file from {self._src_config.data_path}/{self._src_config.space_id}/"
                     f"{item_type_packages}/{src_package_dict.get(id_key)}")
             content = self._src_common.open_local_package(package_dict=src_package_dict)
         else:
@@ -752,9 +753,17 @@ class Migration:
                 f"Some entities may already exist in {self._dst_config.space_id} on server {self._dst_config.endpoint};"
                 f" Do you want to overwrite the existing entities? "
                 f"If no, we will skip the existing entities. [Y/n]: ") == 'Y'
+        self._dst_config.types = process_types
+        self.clone_space_types()
+
+    def clone_space_types(self):
+        self._dst_common.log_info_print(
+            local_logger=self.logger,
+            msg=f"cloning types {self._dst_config.types} from {self._src_config.space_id} on server "
+                f"{self._src_config.endpoint} to {self._dst_config.space_id} on server {self._dst_config.endpoint}")
         self._all_types = inside_space_download_types
         self._initialize_maps()
-        for item_type in process_types:
+        for item_type in self._dst_config.types:
             if item_type in inside_space_clone_types:
                 self._clone_type_to_space(item_type=item_type)
         self._save_space_map()

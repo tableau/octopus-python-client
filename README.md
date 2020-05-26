@@ -16,14 +16,19 @@ Python script to manage Octopus deploy servers through the Octopus Restful APIs
 # Why octopus-python-client?
 
 This project programmatically manage Octopus server through Restful APIs.
-* Managing Octopus server through UI does not fit all situations.
+* Managing Octopus server through Octopus UI does not fit all situations.
 * In the market, we have only PowerShell and C# client tools to manage Octopus server through APIs. We want a client tool which is across the different platform/OS to manage Octopus server through APIs. 
 * A Octopus server/space migration tool is missing on the market. See the complaints
 https://github.com/OctopusDeploy/Issues/issues/5451
 https://help.octopus.com/t/how-do-i-transfer-or-clone-a-project-to-a-different-space-in-octopus-cloud/23333
 https://help.octopus.com/t/octopus-migration-import-api-does-not-honor-space-id/24287/4
+* An Octopus client tool with GUI is not available
 
 # Example
+start Octopus python client GUI
+```
+octopus_python_client
+```
 get all configurations and settings from all spaces at https://demo.octopusdeploy.com/api/
 ```
 octopus_python_client -a=get_spaces

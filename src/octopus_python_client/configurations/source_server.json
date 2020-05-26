@@ -1,9 +1,9 @@
 {
   "api_key": "",
   "endpoint": "https://samples.octopus.app/api/",
-  "is_source_server": false,
+  "is_source_server": true,
   "password": "guest",
-  "space_id": "Spaces-1",
+  "space_id": "Spaces-203",
   "spaces": {
     "Spaces-25": "Pattern - Gitflow",
     "Spaces-45": "Pattern - Rolling",
@@ -20,11 +20,5 @@
   },
   "user_name": "guest",
   "data_path": "",
-  "action": "clone_space",
-  "local_data": false,
-  "no_stdout": false,
-  "overwrite": false,
-  "package": false,
-  "pem": false,
-  "types": []
+  "local_data": false
 }

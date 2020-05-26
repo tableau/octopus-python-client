@@ -16,20 +16,19 @@ logging.basicConfig(filename=os.path.join(os.getcwd(), "octopus_python_client.lo
 class BaseConfig:
     API_KEY = "api_key"
     ENDPOINT = "endpoint"
-    OCTOPUS_NAME = "octopus_name"
     PASSWORD = "password"
     USER_NAME = "user_name"
-    WORK_PATH = "work_path"
+    DATA_PATH = "data_path"
 
     def __init__(self, is_source_server: bool = False):
         self.api_key = ""
         self.endpoint = ""
         self.is_source_server = is_source_server
-        self.octopus_name = ""
         self.password = ""
         self.space_id = ""
+        self.spaces = {}
         self.user_name = ""
-        self.work_path = os.getcwd()
+        self.data_path = os.getcwd()
         self._base_config_dict = copy.deepcopy(self.__dict__)
 
 
@@ -38,19 +37,18 @@ class Config(BaseConfig):
     CONFIG_FILE_KEY = "config_file"
     CONFIGURATIONS_FOLDER = "configurations"
     DEFAULT_CONFIGURATION_FILE_NAME = "configuration.json"
-    GUI_THEME_DARK = "DarkAmber"
     LOCAL_DATA_KEY = "local_data"
     LOGGER = logging.getLogger("Config")
 
     def __init__(self, configuration_file_name: str = None, is_source_server: bool = False):
         super().__init__(is_source_server=is_source_server)
         self.action = Actions.ACTION_GET_SPACES
-        self.gui_theme = Config.GUI_THEME_DARK
         self.local_data = False
         self.no_stdout = False
         self.overwrite = False
         self.package = False
         self.pem = False
+        self.types = []
 
         configuration_file_name = configuration_file_name if configuration_file_name else \
             Config.DEFAULT_CONFIGURATION_FILE_NAME
@@ -62,7 +60,10 @@ class Config(BaseConfig):
         if Path(self.config_file).is_file():
             Config.LOGGER.info(f"loading configuration from {self.config_file}...")
             config_dict = load_file(self.config_file)
+            data_path = self.data_path
             self.__dict__.update(config_dict)
+            if not self.data_path:
+                self.data_path = data_path
         else:
             Config.LOGGER.info(f"configuration file {self.config_file} does not exist.")
 
@@ -81,7 +82,7 @@ class Config(BaseConfig):
 
 if __name__ == "__main__":
     print(Config.LOGGER.name)
-    source_config = Config(configuration_file_name="temp.json", is_source_server=True)
+    source_config = Config(configuration_file_name="source_server.json", is_source_server=True)
     print(source_config.__dict__)
     source_config.save_config()
     main_config = Config()

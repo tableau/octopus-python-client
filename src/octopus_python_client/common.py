@@ -268,6 +268,13 @@ class Common:
         if item:
             local_logger.info(pformat(item))
 
+    @staticmethod
+    def convert_spaces(list_spaces: list):
+        space_dict = {}
+        for space in list_spaces:
+            space_dict[space.get(id_key)] = space.get(name_key)
+        return space_dict
+
     # TODO even after the migration supports packages; we still need to pop VersioningStrategy for cloning project
     # It is a chicken and egg issue; when the project was cloned the first time, the deployment processes is empty;
     # So the DonorPackageStepId which is a deployment process Actions id, is still a broken link, so need to remove;
@@ -286,8 +293,12 @@ class Common:
         return [item.get(id_key) for item in list_items]
 
     def get_list_spaces(self):
-        all_spaces = call_octopus(config=self.config, url_suffix=item_type_spaces)
-        return self.get_list_items_from_all_items(all_items=all_spaces)
+        try:
+            all_spaces = call_octopus(config=self.config, url_suffix=item_type_spaces)
+            return self.get_list_items_from_all_items(all_items=all_spaces)
+        except Exception as err:
+            self.log_error_print(msg=f"Cannot get the spaces for {self.config.endpoint}; {err}")
+            return []
 
     def verify_space(self, space_id_name):
         list_spaces = self.get_list_spaces()
@@ -321,33 +332,33 @@ class Common:
         parent_name = parent_name.replace(slash_sign, underscore_sign)
         child_type = child_type.replace(slash_sign, underscore_sign)
         if self.config.space_id:
-            return os.path.join(self.config.work_path, self.config.octopus_name, self.config.space_id, child_type,
+            return os.path.join(self.config.data_path, self.config.space_id, child_type,
                                 parent_name + underscore_sign + child_type + yaml_ext)
         else:
-            return os.path.join(self.config.work_path, self.config.octopus_name, folder_outer_spaces, child_type,
+            return os.path.join(self.config.data_path, folder_outer_spaces, child_type,
                                 parent_name + underscore_sign + child_type + yaml_ext)
 
-    # get the local single item file from self.config.work_path, space_id, item type, file_name;
+    # get the local single item file from self.config.data_path, space_id, item type, file_name;
     # for spaces files, no space_id needed
     def get_local_single_item_file(self, item_name, item_type, no_ext=False):
         item_type = item_type.replace(slash_sign, underscore_sign)
         item_name = item_name.replace(slash_sign, underscore_sign)
         if self.config.space_id:
-            return os.path.join(self.config.work_path, self.config.octopus_name, self.config.space_id, item_type,
+            return os.path.join(self.config.data_path, self.config.space_id, item_type,
                                 item_name + ("" if no_ext else yaml_ext))
         else:
-            return os.path.join(self.config.work_path, self.config.octopus_name, folder_outer_spaces, item_type,
+            return os.path.join(self.config.data_path, folder_outer_spaces, item_type,
                                 item_name + ("" if no_ext else yaml_ext))
 
-    # get the local all items file from self.config.work_path, space_id, item type;
+    # get the local all items file from self.config.data_path, space_id, item type;
     # for spaces files, no space_id needed
     def get_local_all_items_file(self, item_type):
         item_type_name = item_type.replace(slash_sign, underscore_sign)
         if self.config.space_id:
-            return os.path.join(self.config.work_path, self.config.octopus_name, self.config.space_id,
+            return os.path.join(self.config.data_path, self.config.space_id,
                                 item_type_name, all_underscore + item_type_name + yaml_ext)
         else:
-            return os.path.join(self.config.work_path, self.config.octopus_name, folder_outer_spaces, item_type_name,
+            return os.path.join(self.config.data_path, folder_outer_spaces, item_type_name,
                                 all_underscore + item_type_name + yaml_ext)
 
     # get local item file smartly; three possibilities
@@ -515,7 +526,7 @@ class Common:
             list_space_ids = [self.verify_space(space_id_name=space_id_or_name) for space_id_or_name in
                               list_space_ids_or_names]
         else:
-            list_space_ids = self.get_list_ids_one_type(item_type=item_type_spaces)
+            list_space_ids = [space.get(id_key) for space in self.get_list_spaces()]
         return sorted(list(set(list_space_ids)))
 
     def get_spaces_save(self, space_id_or_name_comma_delimited=None, item_types_comma_delimited=None):

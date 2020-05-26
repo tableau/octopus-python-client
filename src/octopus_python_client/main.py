@@ -8,7 +8,7 @@ from octopus_python_client.common import item_type_deployment_processes, outer_s
     inside_space_download_types, deployment_process_id_key, Common
 from octopus_python_client.config import Config
 from octopus_python_client.deployment_processes import DeploymentProcesses
-from octopus_python_client.main_gui import MainGUI
+from octopus_python_client.gui.main_gui import MainGUI
 from octopus_python_client.migration import Migration
 from octopus_python_client.projects import Projects
 from octopus_python_client.release_deployment import ReleaseDeployment

@@ -6,14 +6,12 @@ from octopus_python_client.gui.wizard import Wizard
 
 
 class MainGUI:
-    SOURCE_SERVER_JSON = "source_server.json"
-
     def __init__(self, width: int = 800, height: int = 600):
         self.width = width
         self.height = height
         self.config = Config()
         self.server = Common(config=self.config)
-        self.source_config = Config(configuration_file_name=MainGUI.SOURCE_SERVER_JSON, is_source_server=True)
+        self.source_config = Config(is_source_server=True)
         self.source = Common(config=self.source_config)
 
     def set_gui(self):

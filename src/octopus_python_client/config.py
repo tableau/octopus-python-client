@@ -37,8 +37,10 @@ class Config(BaseConfig):
     CONFIG_FILE_KEY = "config_file"
     CONFIGURATIONS_FOLDER = "configurations"
     DEFAULT_CONFIGURATION_FILE_NAME = "configuration.json"
+    USE_CURRENT_DATA_PATH = "current"
     LOCAL_DATA_KEY = "local_data"
     LOGGER = logging.getLogger("Config")
+    SOURCE_SERVER_JSON = "source_server.json"
 
     def __init__(self, configuration_file_name: str = None, is_source_server: bool = False):
         super().__init__(is_source_server=is_source_server)
@@ -51,7 +53,7 @@ class Config(BaseConfig):
         self.types = []
 
         configuration_file_name = configuration_file_name if configuration_file_name else \
-            Config.DEFAULT_CONFIGURATION_FILE_NAME
+            (Config.SOURCE_SERVER_JSON if is_source_server else Config.DEFAULT_CONFIGURATION_FILE_NAME)
         code_path = os.path.dirname(os.path.abspath(__file__))
         self.config_file = os.path.join(code_path, Config.CONFIGURATIONS_FOLDER, configuration_file_name)
         self.load_config()

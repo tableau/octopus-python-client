@@ -1,3 +1,4 @@
+import threading
 import tkinter as tk
 from tkinter import messagebox
 
@@ -34,7 +35,7 @@ class SubmitWidgets(tk.Frame):
             self.server.config.save_config()
         return True
 
-    def submit(self):
+    def run_thread(self):
         if self.server.config.action == Actions.ACTION_CLONE_SPACE:
             msg = f"Are you sure you want to clone types {self.server.config.types} from " \
                   f"{self.source.config.space_id} '{self.source.config.spaces.get(self.source.config.space_id)}' on " \
@@ -44,3 +45,6 @@ class SubmitWidgets(tk.Frame):
                   f"{' ' if self.server.config.overwrite else 'NOT '}be overwritten."
             if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
                 Migration(src_config=self.source.config, dst_config=self.server.config).clone_space_types()
+
+    def start_run(self):
+        threading.Thread(target=self.run_thread).start()

@@ -67,4 +67,4 @@ class Wizard(tk.Frame):
 
     def submit(self):
         self.current_step_widgets.process_config()
-        self.current_step_widgets.submit()
+        self.current_step_widgets.start_run()

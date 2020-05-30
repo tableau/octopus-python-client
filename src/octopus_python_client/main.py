@@ -31,7 +31,7 @@ class OctopusClient:
         parser = argparse.ArgumentParser()
         parser.add_argument("-o", "--endpoint", help="octopus endpoint")
         parser.add_argument("-s", "--space_id_name", help="octopus space id or name")
-        parser.add_argument("-m", "--pem", help="octopus endpoint root pem file path")
+        parser.add_argument("-m", "--pem", help="octopus endpoint root pem file path; -m=false to disable pem")
         parser.add_argument("-sps", "--spaces",
                             help='list of octopus space id or name, like "my space,Spaces-1,Spaces-2"')
         parser.add_argument("-d", "--data_path",
@@ -53,7 +53,8 @@ class OctopusClient:
                             help="password for octopus; either api_key or user_name and password are required")
         parser.add_argument("-srs", "--source_space_id_name",
                             help="source octopus space id or name for clone/migration")
-        parser.add_argument("-srm", "--source_pem", help="source octopus endpoint root pem file path")
+        parser.add_argument("-srm", "--source_pem",
+                            help="source octopus endpoint root pem file path; -srm=false to disable pem")
         parser.add_argument("-ld", "--local_data", help="if present, local_data = True; the source server/space "
                                                         "data are stored as YAML files locally", action="store_true")
         parser.add_argument("-a", "--action", help=str(Actions.__dict__.values()))
@@ -136,7 +137,9 @@ class OctopusClient:
         assert self._target_config.api_key or (self._target_config.user_name and self._target_config.password), \
             f"either api_key or user_name and password are required"
 
-        if args.pem:
+        if args.pem and args.pem.lower() == "false":
+            self._target_config.pem = False
+        elif args.pem:
             self._target_config.pem = args.pem
 
         if args.overwrite:

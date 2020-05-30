@@ -107,6 +107,35 @@ class ReleaseDeployment:
         return f"- {date_time} - [{title}]({self._gitlab_url_prefix}" \
                f"{commit_dict.get(sha_key)}) - {commit_dict.get(author_key)}"
 
+    def _get_prev_release_match_commit_date_time(self, list_releases: list):
+        if list_releases:
+            # In literal string: Releases-10000 < Releases-9999 so converting to integer to compare
+            list_releases.sort(key=lambda one_release: int(one_release.get(id_key).split(hyphen_sign)[1]), reverse=True)
+            for release in list_releases:
+                logger.info(f"checking {release.get(id_key)} for project {self._project_id}...")
+                if release.get(release_notes_key):
+                    logger.info(f"found notes in {release.get(id_key)} and try to get the commit timestamp...")
+                    notes_last_line = release.get(release_notes_key).splitlines()[-1]
+                    last_line_parsed = parse_string(local_logger=logger, string=notes_last_line)
+                    if isinstance(last_line_parsed, dict) and last_line_parsed.get(self._commits_variable_set_name):
+                        prev_release_match_commit_date_time = last_line_parsed.get(self._commits_variable_set_name)
+                        topic_note = f"\nThe previous release with the commit timestamp " \
+                                     f"{prev_release_match_commit_date_time} is {release.get(id_key)} " \
+                                     f"(release version: {release.get(version_key)}). "
+                        logger.info(topic_note)
+                        return topic_note, prev_release_match_commit_date_time
+                    else:
+                        logger.warning(f"the commit timestamp in {release.get(id_key)} not exist")
+                else:
+                    logger.warning(f"{release.get(id_key)} has no release notes")
+            topic_note = f"\nNo previous release with the commit timestamp in notes was found"
+            logger.warning(topic_note)
+            return topic_note, ""
+        else:
+            topic_note = f"\nThis is the first release for project {self._project_id}. "
+            logger.info(topic_note)
+            return topic_note, ""
+
     def _generate_commits_notes(self):
         logger.info("generating the release notes for the commits history")
         # find the latest/previous release for this project
@@ -114,31 +143,9 @@ class ReleaseDeployment:
         address = f"{item_type_projects}/{self._project_id}/{item_type_releases}"
         releases = self._common.request_octopus_item(address=address)
         list_releases = self._common.get_list_items_from_all_items(all_items=releases)
-        prev_release_match_commit_date_time = ""
-        list_notes = ["\n========== below is auto-generated notes =========="]
-        if list_releases:
-            # In literal string: Releases-10000 < Releases-9999 so converting to integer to compare
-            prev_release = max(list_releases, key=lambda release: int(release.get(id_key).split(hyphen_sign)[1]))
-            logger.info(f"the latest release for project {self._project_id} is {prev_release.get(id_key)}")
-            if prev_release.get(release_notes_key):
-                logger.info(f"found the notes in the previous release {prev_release.get(id_key)} and try to get the"
-                            f" commit timestamp...")
-                notes_last_line = prev_release.get(release_notes_key).splitlines()[-1]
-                last_line_parsed = parse_string(local_logger=logger, string=notes_last_line)
-                if isinstance(last_line_parsed, dict) and last_line_parsed.get(self._commits_variable_set_name):
-                    prev_release_match_commit_date_time = last_line_parsed.get(self._commits_variable_set_name)
-                    logger.info(f"the commit timestamp in the previous release {prev_release.get(id_key)} is "
-                                f"{prev_release_match_commit_date_time}")
-                else:
-                    logger.warning(f"the commit timestamp in the previous release {prev_release.get(id_key)} not exist")
-            else:
-                logger.warning(f"previous release {prev_release.get(id_key)} has no release notes")
-            topic_note = f"\nThe previous release is {prev_release.get(id_key)} (release version: " \
-                         f"{prev_release.get(version_key)}). "
-        else:
-            logger.info(f"project {self._project_id} has no existing releases")
-            topic_note = f"\nThis is the first release for this project. "
-        list_notes.append(topic_note)
+        topic_note, prev_release_match_commit_date_time = \
+            self._get_prev_release_match_commit_date_time(list_releases=list_releases)
+        list_notes = ["\n========== below is auto-generated notes ==========", topic_note]
 
         # historical commits since the latest release
         list_configuration_commits = self._common.get_list_variables_by_set_name_or_id(
@@ -167,6 +174,7 @@ class ReleaseDeployment:
         if not list_commit_notes:
             list_notes.append("None")
         else:
+            list_commit_notes.reverse()
             list_notes.extend(list_commit_notes)
 
         # matched latest commit for the current release

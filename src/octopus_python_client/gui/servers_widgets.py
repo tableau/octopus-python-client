@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-from octopus_python_client.actions import Actions
+from octopus_python_client.actions import ACTIONS_DICT, MIGRATION_LIST
 from octopus_python_client.common import Common
 from octopus_python_client.config import Config
 
@@ -12,19 +12,20 @@ class ServersWidgets(tk.Frame):
 
         self.server = server
         self.source = source
-        self.local_data = tk.StringVar()
-        self.target_variables = {}
-        self.source_variables = {}
+        self.local_data = None
+        self.target_variables = None
+        self.source_variables = None
         self.update_step()
 
     def update_step(self):
         self.target_variables = {}
         self.source_variables = {}
-        tk.Label(self, text=f"{self.server.config.action} ({Actions.ACTIONS_DICT.get(self.server.config.action)})",
+        tk.Label(self, text=f"{self.server.config.action} ({ACTIONS_DICT.get(self.server.config.action)})",
                  bd=2, relief="groove").grid(sticky=tk.W)
-        if self.server.config.action in Actions.MIGRATION_LIST:
+        if self.server.config.action in MIGRATION_LIST:
             self.source_variables = self.set_server_frame(config=self.source.config)
             # 'The source server data is loaded from local files, not directly from server'
+            self.local_data = tk.StringVar()
             tk.Checkbutton(self, text="The source Octopus data is loaded from local files, not from Octopus server",
                            variable=self.local_data).grid(sticky=tk.EW)
             self.local_data.set(self.source.config.local_data)
@@ -44,7 +45,7 @@ class ServersWidgets(tk.Frame):
         tk.Label(server_frame, text="Server endpoint (must end with /api/)") \
             .grid(row=1, column=0, sticky=tk.E, columnspan=4)
         endpoint_variable = tk.StringVar()
-        tk.Entry(server_frame, width=40, textvariable=endpoint_variable) \
+        tk.Entry(server_frame, width=60, textvariable=endpoint_variable) \
             .grid(row=1, column=4, columnspan=4, sticky=tk.W)
         endpoint_variable.set(config.endpoint if config.endpoint else "")
 
@@ -57,7 +58,7 @@ class ServersWidgets(tk.Frame):
         tk.Label(server_frame, text="user_name/password NOT used if API-KEY exists: ") \
             .grid(row=3, column=0, sticky=tk.E, columnspan=4)
 
-        tk.Label(server_frame, text="user_name").grid(row=3, column=4, sticky=tk.W, columnspan=1)
+        tk.Label(server_frame, text="user_name").grid(row=3, column=4, sticky=tk.E, columnspan=1)
         user_name_variable = tk.StringVar()
         tk.Entry(server_frame, width=10, textvariable=user_name_variable) \
             .grid(row=3, column=5, sticky=tk.W, columnspan=1)
@@ -66,13 +67,13 @@ class ServersWidgets(tk.Frame):
         tk.Label(server_frame, text="password").grid(row=3, column=6, columnspan=1, sticky=tk.E)
         password_variable = tk.StringVar()
         tk.Entry(server_frame, width=10, show="*", textvariable=password_variable) \
-            .grid(row=3, column=7, sticky=tk.E, columnspan=1)
+            .grid(row=3, column=7, sticky=tk.W, columnspan=1)
         password_variable.set(config.password if config.password else "")
 
         tk.Label(server_frame, text="Local path to store data for single Octopus server") \
             .grid(row=4, column=0, sticky=tk.E, columnspan=4)
         data_path_variable = tk.StringVar()
-        tk.Entry(server_frame, width=40, textvariable=data_path_variable) \
+        tk.Entry(server_frame, width=80, textvariable=data_path_variable) \
             .grid(row=4, column=4, sticky=tk.W, columnspan=4)
         data_path_variable.set(config.data_path if config.data_path else "")
 

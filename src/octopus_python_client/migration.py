@@ -46,7 +46,7 @@ class Migration:
     def _find_matched_dst_item_by_src_item(self, src_item_with_dst_ids, item_type):
         self.logger.info(f"Look for the matched destination {item_type} {src_item_with_dst_ids.get(name_key)} in "
                          f"{self._dst_config.space_id}")
-        dst_list_items = self._dst_common.get_one_type_to_list(item_type=item_type)
+        dst_list_items = self._dst_common.get_list_from_one_type(item_type=item_type)
         item_name = src_item_with_dst_ids.get(name_key)
         match_dict = None
         # "channels" and "runbooks" are special, the name is not unique across a space;
@@ -662,7 +662,7 @@ class Migration:
             # for cloning space to space on the same Octopus server
             else:
                 self.logger.info(f"Loading {item_type} from source space {self._src_config.space_id}...")
-                src_list_items = self._src_common.get_one_type_to_list(item_type=item_type)
+                src_list_items = self._src_common.get_list_from_one_type(item_type=item_type)
             selected_src_list_items = []
             for src_item in src_list_items:
                 if not actual_src_space_id and self._src_config.local_data and item_type == item_type_projects \

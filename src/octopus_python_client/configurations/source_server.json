@@ -3,6 +3,7 @@
   "endpoint": "https://samples.octopus.app/api/",
   "is_source_server": true,
   "password": "guest",
+  "pem": false,
   "space_id": "Spaces-203",
   "spaces": {
     "Spaces-25": "Pattern - Gitflow",

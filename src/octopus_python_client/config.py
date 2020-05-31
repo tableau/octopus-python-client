@@ -25,6 +25,7 @@ class BaseConfig:
         self.endpoint = ""
         self.is_source_server = is_source_server
         self.password = ""
+        self.pem = False
         self.space_id = ""
         self.spaces = {}
         self.user_name = ""
@@ -45,11 +46,17 @@ class Config(BaseConfig):
     def __init__(self, configuration_file_name: str = None, is_source_server: bool = False):
         super().__init__(is_source_server=is_source_server)
         self.action = Actions.ACTION_GET_SPACES
+        self.channel_id = ""
+        self.channels = {}
         self.local_data = False
         self.no_stdout = False
         self.overwrite = False
         self.package = False
-        self.pem = False
+        self.project_id = ""
+        self.projects = {}
+        self.release_version = ""
+        self.prev_releases = []
+        self.release_notes = ""
         self.types = []
 
         configuration_file_name = configuration_file_name if configuration_file_name else \

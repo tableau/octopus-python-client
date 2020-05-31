@@ -289,7 +289,7 @@ class Common:
         project.get(versioning_strategy_key)[donor_package_step_id_key] = None
 
     def get_list_ids_one_type(self, item_type):
-        list_items = self.get_one_type_to_list(item_type=item_type)
+        list_items = self.get_list_from_one_type(item_type=item_type)
         return [item.get(id_key) for item in list_items]
 
     def get_list_spaces(self):
@@ -987,7 +987,7 @@ class Common:
             self.get_or_delete_single_item_by_id(item_type=item_type_variables, item_id=set_id)
         return variables_dict.get(variables_key)
 
-    def get_one_type_to_list(self, item_type):
+    def get_list_from_one_type(self, item_type):
         all_items = self.get_one_type_ignore_error(item_type=item_type)
         return self.get_list_items_from_all_items(all_items=all_items)
 
@@ -1059,3 +1059,12 @@ class Common:
             address = f"{item_type_packages}/{package_raw}?overwriteMode=IgnoreIfExists"
         return self.request_octopus_item(address=address, operation=operation_post_file,
                                          files={file_key: (file_name, content)})
+
+    def get_list_items_by_conditional_id(self, item_type: str, condition_key: str, condition_id: str):
+        self.logger.info(f"find the list of {item_type} by {condition_key} == {condition_id}")
+        list_all_items = self.get_list_from_one_type(item_type=item_type)
+        list_items = []
+        for item in list_all_items:
+            if item.get(condition_key) == condition_id:
+                list_items.append(item)
+        return list_items

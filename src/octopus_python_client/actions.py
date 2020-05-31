@@ -34,11 +34,13 @@ class Actions:
     ACTION_CREATE_DEPLOYMENT = "create_deployment"
     ACTION_CREATE_RELEASE_DEPLOYMENT = "create_release_deployment"
 
-    ACTIONS_DICT = {
-        ACTION_GET_SPACES: "download the data of multiple types in a number of spaces or all spaces",
-        ACTION_GET_TYPES: "download the data of multiple types in one space",
-        ACTION_CLONE_SPACE: "clone multiple types from one space to another space on the same server or the different "
-                            "server"
-    }
 
-    MIGRATION_LIST = [ACTION_CLONE_SPACE_ITEM, ACTION_CLONE_SPACE, ACTION_CLONE_SERVER]
+ACTIONS_DICT = {
+    # Actions.ACTION_GET_SPACES: "download the data of multiple types in a number of spaces or all spaces",
+    # Actions.ACTION_GET_TYPES: "download the data of multiple types in one space",
+    Actions.ACTION_CLONE_SPACE: "clone multiple types from one space to another space on the same server or the "
+                                "different server",
+    Actions.ACTION_CREATE_RELEASE: "create a new release for a project"
+}
+
+MIGRATION_LIST = [Actions.ACTION_CLONE_SPACE_ITEM, Actions.ACTION_CLONE_SPACE, Actions.ACTION_CLONE_SERVER]

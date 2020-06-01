@@ -2,7 +2,7 @@
 
 ![As-Is](https://img.shields.io/badge/Support%20Level-As--Is-e8762c.svg)
 
-Python script to manage Octopus deploy servers through the Octopus Restful APIs
+Python script and GUI to manage Octopus deploy servers through the Octopus Restful APIs
 
 * [Why octopus-python-client?](#why-octopus-python-client)
 * [Example](#example)
@@ -15,7 +15,7 @@ Python script to manage Octopus deploy servers through the Octopus Restful APIs
 
 # Why octopus-python-client?
 
-This project programmatically manage Octopus server through Restful APIs.
+This project programmatically manage Octopus server through Restful APIs by command line and GUI.
 * Managing Octopus server through Octopus UI does not fit all situations.
 * In the market, we have only PowerShell and C# client tools to manage Octopus server through APIs. We want a client tool which is across the different platform/OS to manage Octopus server through APIs. 
 * A Octopus server/space migration tool is missing on the market. See the complaints
@@ -29,6 +29,8 @@ start Octopus python client GUI
 ```
 octopus_python_client
 ```
+[MacOS issue](https://stackoverflow.com/questions/52529403/button-text-of-tkinter-does-not-work-in-mojave)
+
 get all configurations and settings from all spaces at https://samples.octopus.app/api/
 ```
 octopus_python_client -a=get_spaces

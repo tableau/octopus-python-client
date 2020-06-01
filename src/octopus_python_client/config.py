@@ -24,10 +24,11 @@ class BaseConfig:
         self.api_key = ""
         self.endpoint = ""
         self.is_source_server = is_source_server
+        self.item_id = ""
+        self.item_name = ""
         self.password = ""
         self.pem = False
         self.space_id = ""
-        self.spaces = {}
         self.user_name = ""
         self.data_path = os.getcwd()
         self._base_config_dict = copy.deepcopy(self.__dict__)
@@ -47,16 +48,15 @@ class Config(BaseConfig):
         super().__init__(is_source_server=is_source_server)
         self.action = Actions.ACTION_GET_SPACES
         self.channel_id = ""
-        self.channels = {}
         self.local_data = False
         self.no_stdout = False
         self.overwrite = False
         self.package = False
         self.project_id = ""
-        self.projects = {}
         self.release_version = ""
         self.prev_releases = []
         self.release_notes = ""
+        self.type = ""
         self.types = []
 
         configuration_file_name = configuration_file_name if configuration_file_name else \

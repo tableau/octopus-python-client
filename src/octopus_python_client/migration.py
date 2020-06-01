@@ -182,17 +182,20 @@ class Migration:
         if not src_item.get(is_service_key):
             src_item[login_payload_password_key] = default_password
 
-    def _clone_item_to_space(self, item_type, item_name=None, item_id=None):
+    def _clone_item_to_space(self, item_type, item_name=None, item_id=None, new_item_name=None):
+        if not new_item_name:
+            new_item_name = item_name
         item_badge = item_name if item_name else item_id
         self.logger.info(
-            f"clone {item_type} {item_badge} from {self._src_config.space_id} to {self._dst_config.space_id}")
+            f"clone {item_type} {item_badge} from {self._src_config.space_id} to {new_item_name} in "
+            f"{self._dst_config.space_id}")
 
         full_process = self._type_full_func_dict.get(item_type)
         if full_process:
             self.logger.info(
                 f"Special full processing for {item_type} {item_name} {item_id} in space {self._dst_config.space_id} "
                 f"with function {full_process.__name__}")
-            return full_process(item_type=item_type, item_name=item_name, item_id=item_id)
+            return full_process(item_type=item_type, item_name=item_name, item_id=item_id, new_item_name=new_item_name)
 
         # find the source item in file/memory
         src_item = {}
@@ -203,6 +206,10 @@ class Migration:
             src_item = self._src_id_payload_dict.get(item_id)
         if not src_item:
             raise ValueError(f"{item_type} {item_badge} does not exist in the source space")
+
+        if src_item.get(name_key) and new_item_name and src_item.get(name_key) != new_item_name:
+            self.logger.info(f"clone from {src_item.get(name_key)} to new item name {new_item_name}")
+            src_item[name_key] = new_item_name
 
         return self._create_item_to_space(item_type=item_type, src_item=src_item)
 
@@ -583,11 +590,14 @@ class Migration:
 
         self._dst_tenant_variables_payload_dict[dst_id] = dst_tenant_variables
 
-    def _full_process_tags(self, item_type, item_id, item_name=None):
+    # TODO how to process new item name
+    def _full_process_tags(self, item_type, item_id, item_name=None, new_item_name=None):
+        if not new_item_name:
+            new_item_name = item_name
         self._dst_common.log_info_print(
             local_logger=self.logger,
             msg=f"special full process - clone {item_type} {item_name} {item_id} from {self._src_config.space_id} "
-                f"to {self._dst_config.space_id}")
+                f"to {new_item_name} {self._dst_config.space_id}")
         tag_set_name = item_id.split(slash_sign)[0]
         src_list_tag_sets = self._type_src_list_items_dict.get(item_type_tag_sets)
         src_tag_set = find_item(lst=src_list_tag_sets, key=name_key, value=tag_set_name)
@@ -779,10 +789,22 @@ class Migration:
                 f"Some entities may already exist in {self._dst_config.space_id} on server {self._dst_config.endpoint};"
                 f" Do you want to overwrite the existing entities? "
                 f"If no, we will skip the existing entities. [Y/n]: ") == 'Y'
+        self._dst_config.type = item_type
+        self._src_config.item_id = item_id
+        self._src_config.item_name = item_name
+        self.clone_space_item_new_name()
+
+    def clone_space_item_new_name(self, new_item_name=None):
+        item_type = self._dst_config.type
+        item_name = self._src_config.item_name
+        item_id = self._src_config.item_id
+        if not new_item_name:
+            new_item_name = item_name
         self._all_types = inside_space_download_types
         self._initialize_maps()
         if item_type in inside_space_clone_types:
-            self._clone_item_to_space(item_type=item_type, item_name=item_name, item_id=item_id)
+            self._clone_item_to_space(item_type=item_type, item_name=item_name, item_id=item_id,
+                                      new_item_name=new_item_name)
         self._save_space_map()
 
     def clone_server(self, space_id_or_name_comma_delimited=None, item_types_comma_delimited=None):

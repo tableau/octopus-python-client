@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 
 from octopus_python_client.actions import ACTIONS_DICT, MIGRATION_LIST
 from octopus_python_client.common import Common
@@ -35,6 +35,11 @@ class ServersWidgets(tk.Frame):
                      bd=2, relief="groove").grid(sticky=tk.EW)
             ttk.Separator(self, orient=tk.HORIZONTAL).grid(sticky=tk.EW)
         self.target_variables = self.set_server_frame(config=self.server.config)
+
+    @staticmethod
+    def file_dialog_ask_dir(tk_var: tk.StringVar):
+        a_dir = filedialog.askdirectory(initialdir=tk_var.get(), title="Select path")
+        tk_var.set(a_dir)
 
     def set_server_frame(self, config: Config):
         server_frame = tk.Frame(self)
@@ -73,9 +78,13 @@ class ServersWidgets(tk.Frame):
         tk.Label(server_frame, text="Local path to store data for single Octopus server") \
             .grid(row=4, column=0, sticky=tk.E, columnspan=4)
         data_path_variable = tk.StringVar()
-        tk.Entry(server_frame, width=80, textvariable=data_path_variable) \
+        tk.Entry(server_frame, width=60, textvariable=data_path_variable) \
             .grid(row=4, column=4, sticky=tk.W, columnspan=4)
         data_path_variable.set(config.data_path if config.data_path else "")
+
+        tk.Button(server_frame, text='Select path',
+                  command=lambda: self.file_dialog_ask_dir(tk_var=data_path_variable)) \
+            .grid(row=4, column=8, sticky=tk.W, columnspan=1)
 
         server_frame.grid(sticky=tk.W)
         return {Config.ENDPOINT: endpoint_variable, Config.API_KEY: api_key_variable,
@@ -84,12 +93,11 @@ class ServersWidgets(tk.Frame):
 
     @staticmethod
     def verify_spaces(server: Common):
-        list_spaces = server.get_list_spaces()
-        server.config.spaces = Common.convert_spaces(list_spaces=list_spaces)
-        if not server.config.spaces:
+        if not server.get_list_spaces():
             messagebox.showerror(
-                "No Spaces!", f"No spaces can be found on {'source' if server.config.is_source_server else 'target'} "
-                              f"server {server.config.endpoint}. Please check your permission and/or credential")
+                title="No Spaces!",
+                message=f"No spaces can be found on {'source' if server.config.is_source_server else 'target'} "
+                        f"server {server.config.endpoint}. Please check your permission and/or credential")
             return False
         return True
 

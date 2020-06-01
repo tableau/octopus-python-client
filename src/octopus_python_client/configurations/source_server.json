@@ -5,20 +5,6 @@
   "password": "guest",
   "pem": false,
   "space_id": "Spaces-203",
-  "spaces": {
-    "Spaces-25": "Pattern - Gitflow",
-    "Spaces-45": "Pattern - Rolling",
-    "Spaces-103": "Target - Docker",
-    "Spaces-105": "Target - Kubernetes",
-    "Spaces-104": "Target - NGINX",
-    "Spaces-1": "Target - Serverless",
-    "Spaces-106": "Target - SQL Server",
-    "Spaces-203": "Target - Tomcat",
-    "Spaces-85": "Target - Wildfly",
-    "Spaces-202": "Target - Windows",
-    "Spaces-102": "Tenants - Regions",
-    "Spaces-2": "Tenants - Self-Host"
-  },
   "user_name": "guest",
   "data_path": "",
   "local_data": false

@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 
-from octopus_python_client.actions import Actions
+from octopus_python_client.actions import Actions, MIGRATION_LIST
 from octopus_python_client.common import item_type_deployment_processes, outer_space_download_types, steps_key, \
     inside_space_download_types, deployment_process_id_key, Common
 from octopus_python_client.config import Config
@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 
 class OctopusClient:
-    CLONE_ACTIONS_SET = {Actions.ACTION_CLONE_SPACE_ITEM, Actions.ACTION_CLONE_SPACE, Actions.ACTION_CLONE_SERVER}
 
     def __init__(self):
         self._target_config = Config()
@@ -167,7 +166,7 @@ class OctopusClient:
                 and input(f"Are you sure you want to run a command against {None} space [Y/n]? ") != "Y":
             return
 
-        if args.action in OctopusClient.CLONE_ACTIONS_SET:
+        if args.action in MIGRATION_LIST:
             self._target_common.log_info_print(msg=f"===== Action: {args.action}; processing the source config =====")
 
             if args.local_data:

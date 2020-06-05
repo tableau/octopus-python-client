@@ -1,3 +1,4 @@
+import logging
 import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -8,6 +9,8 @@ from octopus_python_client.common import Common, item_type_channels, project_id_
 from octopus_python_client.migration import Migration
 from octopus_python_client.release_deployment import ReleaseDeployment
 from octopus_python_client.utilities.helper import find_item, find_index
+
+logger = logging.getLogger(__name__)
 
 
 class SubmitWidgets(tk.Frame):
@@ -69,7 +72,7 @@ class SubmitWidgets(tk.Frame):
         space_item_frame.grid(sticky=tk.W)
 
     def set_new_item_name(self, event=None):
-        self.server.log_info_print(msg=str(event))
+        logger.info(msg=str(event))
         if self.has_item_name:
             item_name_id = self.item_id_name_var.get().split(SubmitWidgets.DIVIDER_BAR)
             item_name = item_name_id[0]

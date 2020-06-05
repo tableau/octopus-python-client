@@ -59,9 +59,12 @@ class OptionsWidgets(tk.Frame):
         types_frame = tk.Frame(self)
         tk.Label(types_frame, text=f"Select one item type", bd=2).grid(row=0, sticky=tk.W, columnspan=2)
         self.type_var = tk.StringVar()
-        self.type_var.set(self.server.config.type)
         list_types = copy.deepcopy(inside_space_clone_types)
         list_types.sort()
+        if self.server.config.type and self.server.config.type in list_types:
+            self.type_var.set(self.server.config.type)
+        else:
+            self.type_var.set(list_types[0])
         for index, item_type in enumerate(list_types):
             tk.Radiobutton(types_frame, text=f"{item_type}", variable=self.type_var, value=item_type, justify=tk.LEFT,
                            command=lambda *args: None) \

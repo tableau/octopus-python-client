@@ -14,7 +14,7 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     item_type_scoped_user_roles, user_role_id_key, runbook_process_prefix, published_runbook_snapshot_id_key, \
     item_id_prefix_to_type_dict, positive_integer_regex, team_id_key, outer_space_clone_types, item_type_users, \
     item_type_spaces, default_password, is_service_key, space_managers_teams, item_type_teams, package_id_key, \
-    comma_sign
+    comma_sign, cloned_from_project_id, item_type_runbook_processes
 from octopus_python_client.config import Config
 from octopus_python_client.utilities.helper import find_item, save_file, find_matched_sub_list, log_raise_value_error
 from octopus_python_client.utilities.send_requests_to_octopus import login_payload_user_name_key, \
@@ -122,6 +122,7 @@ class Migration:
             f"prepare {item_type_projects} {src_item.get(name_key)} for migrating to {self._dst_config.space_id}")
         src_item.pop(deployment_process_id_key, None)
         src_item.pop(variable_set_id_key, None)
+        src_item.pop(cloned_from_project_id, None)  # to avoid clone projects we do not need
         self._dst_common.prepare_project_versioning_strategy(project=src_item)
 
     # we do not want to clone the child items first;
@@ -553,7 +554,7 @@ class Migration:
         self._clone_child(src_parent_id=src_id, dst_parent_id=dst_id, child_type=item_type_variables,
                           child_id_key=variable_set_id_key)
 
-    def _post_process_runbook(self, src_id, dst_id, item_type_runbook_processes=None):
+    def _post_process_runbook(self, src_id, dst_id):
         self._dst_common.log_info_print(
             local_logger=self.logger,
             msg=f"clone {item_type_runbook_processes} from {item_type_runbooks} {src_id} in "

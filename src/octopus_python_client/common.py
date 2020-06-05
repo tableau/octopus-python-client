@@ -41,6 +41,7 @@ actions_key = 'Actions'
 author_key = "author"
 canonical_tag_name_key = "CanonicalTagName"
 channel_id_key = "ChannelId"
+cloned_from_project_id = "ClonedFromProjectId"
 cloned_from_tenant_id_key = "ClonedFromTenantId"
 comments_key = "Comments"
 deployment_process_id_key = 'DeploymentProcessId'

@@ -1,20 +1,27 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import messagebox, filedialog
 
 from octopus_python_client.actions import ACTIONS_DICT, MIGRATION_LIST
 from octopus_python_client.common import Common
 from octopus_python_client.config import Config
+from octopus_python_client.gui.common_widgets import CommonWidgets
 
 
 class ServersWidgets(tk.Frame):
-    def __init__(self, parent, server: Common, source: Common):
+    def __init__(self, parent: tk.Frame, server: Common, source: Common, next_button: tk.Button = None,
+                 submit_button: tk.Button = None):
         super().__init__(parent)
 
         self.server = server
         self.source = source
+
+        self.next_button = next_button
+        self.submit_button = submit_button
+
         self.local_data = None
-        self.target_variables = None
         self.source_variables = None
+        self.target_variables = None
+
         self.update_step()
 
     def update_step(self):
@@ -29,11 +36,7 @@ class ServersWidgets(tk.Frame):
             tk.Checkbutton(self, text="The source Octopus data is loaded from local files, not from Octopus server",
                            variable=self.local_data).grid(sticky=tk.EW)
             self.local_data.set(self.source.config.local_data)
-            ttk.Separator(self, orient=tk.HORIZONTAL).grid(sticky=tk.EW)
-            tk.Label(self, text=f"\u21D3     \u21D3     \u21D3     \u21D3     \u21D3      {self.server.config.action}"
-                                f"      \u21D3     \u21D3     \u21D3     \u21D3     \u21D3",
-                     bd=2, relief="groove").grid(sticky=tk.EW)
-            ttk.Separator(self, orient=tk.HORIZONTAL).grid(sticky=tk.EW)
+            CommonWidgets.directional_separator(parent=self, title=self.server.config.action)
         self.target_variables = self.set_server_frame(config=self.server.config)
 
     @staticmethod
@@ -107,7 +110,7 @@ class ServersWidgets(tk.Frame):
             for key, variable in self.source_variables.items():
                 source_config_dict[key] = variable.get()
             self.source.config.__dict__.update(source_config_dict)
-            self.source.config.local_data = True if self.local_data.get() == "1" else False
+            self.source.config.local_data = True if self.local_data.get() == CommonWidgets.SELECTED else False
             if not ServersWidgets.verify_spaces(server=self.source):
                 return False
             self.source.config.save_config()

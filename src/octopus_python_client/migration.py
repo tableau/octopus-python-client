@@ -14,8 +14,9 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     item_type_scoped_user_roles, user_role_id_key, runbook_process_prefix, published_runbook_snapshot_id_key, \
     item_id_prefix_to_type_dict, positive_integer_regex, team_id_key, outer_space_clone_types, item_type_users, \
     item_type_spaces, default_password, is_service_key, space_managers_teams, item_type_teams, package_id_key, \
-    comma_sign, cloned_from_project_id, item_type_runbook_processes
+    comma_sign, cloned_from_project_id, item_type_runbook_processes, item_type_project_triggers
 from octopus_python_client.config import Config
+from octopus_python_client.item_types import Constants
 from octopus_python_client.utilities.helper import find_item, save_file, find_matched_sub_list, log_raise_value_error
 from octopus_python_client.utilities.send_requests_to_octopus import login_payload_user_name_key, \
     login_payload_password_key
@@ -51,7 +52,8 @@ class Migration:
         match_dict = None
         # "channels" and "runbooks" are special, the name is not unique across a space;
         # we must use both name and project id to find the match
-        if item_type == item_type_channels or item_type == item_type_runbooks:
+        if item_type == item_type_channels or item_type == item_type_runbooks or \
+                item_type == item_type_project_triggers:
             match_dict = {name_key: item_name, project_id_key: src_item_with_dst_ids.get(project_id_key)}
         # type "releases" has no name and is unique by "Version" and "ProjectId"
         elif item_type == item_type_releases:
@@ -183,20 +185,18 @@ class Migration:
         if not src_item.get(is_service_key):
             src_item[login_payload_password_key] = default_password
 
-    def _clone_item_to_space(self, item_type, item_name=None, item_id=None, new_item_name=None):
-        if not new_item_name:
-            new_item_name = item_name
+    def _clone_item_to_space(self, item_type, item_name=None, item_id=None, pars_dict: dict = None):
         item_badge = item_name if item_name else item_id
         self.logger.info(
-            f"clone {item_type} {item_badge} from {self._src_config.space_id} to {new_item_name} in "
-            f"{self._dst_config.space_id}")
+            f"clone {item_type} {item_badge} from {self._src_config.space_id} to {self._dst_config.space_id} with "
+            f"parameters {pars_dict}")
 
         full_process = self._type_full_func_dict.get(item_type)
         if full_process:
             self.logger.info(
                 f"Special full processing for {item_type} {item_name} {item_id} in space {self._dst_config.space_id} "
                 f"with function {full_process.__name__}")
-            return full_process(item_type=item_type, item_name=item_name, item_id=item_id, new_item_name=new_item_name)
+            return full_process(item_type=item_type, item_name=item_name, item_id=item_id, pars_dict=pars_dict)
 
         # find the source item in file/memory
         src_item = {}
@@ -208,9 +208,21 @@ class Migration:
         if not src_item:
             raise ValueError(f"{item_type} {item_badge} does not exist in the source space")
 
-        if src_item.get(name_key) and new_item_name and src_item.get(name_key) != new_item_name:
-            self.logger.info(f"clone from {src_item.get(name_key)} to new item name {new_item_name}")
-            src_item[name_key] = new_item_name
+        if src_item.get(name_key) and pars_dict and pars_dict.get(Constants.NEW_ITEM_NAME_KEY):
+            msg = f"clone/rename {item_type} {src_item.get(name_key)} to {pars_dict.get(Constants.NEW_ITEM_NAME_KEY)}"
+            self._dst_common.log_info_print(msg=msg)
+            src_item[name_key] = pars_dict.get(Constants.NEW_ITEM_NAME_KEY)
+
+        if src_item.get(project_id_key) and pars_dict and isinstance(pars_dict.get(Constants.PROJECT_IDS_KEY), list):
+            msg = f"cloning {item_type} {src_item.get(name_key)} to {pars_dict.get(Constants.PROJECT_IDS_KEY)}"
+            self._dst_common.log_info_print(msg=msg)
+            for project_id in pars_dict.get(Constants.PROJECT_IDS_KEY):
+                msg = f"cloning {item_type} {src_item.get(name_key)} to {project_id}"
+                self._dst_common.log_info_print(msg=msg)
+                src_item[project_id_key] = project_id
+                self._src_id_vs_dst_id_dict.pop(item_id, None)
+                self._create_item_to_space(item_type=item_type, src_item=src_item)
+            return
 
         return self._create_item_to_space(item_type=item_type, src_item=src_item)
 
@@ -591,14 +603,12 @@ class Migration:
 
         self._dst_tenant_variables_payload_dict[dst_id] = dst_tenant_variables
 
-    # TODO how to process new item name
-    def _full_process_tags(self, item_type, item_id, item_name=None, new_item_name=None):
-        if not new_item_name:
-            new_item_name = item_name
+    # TODO how to process new item name in pars_dict
+    def _full_process_tags(self, item_type, item_id, item_name=None, pars_dict: dict = None):
         self._dst_common.log_info_print(
             local_logger=self.logger,
             msg=f"special full process - clone {item_type} {item_name} {item_id} from {self._src_config.space_id} "
-                f"to {new_item_name} {self._dst_config.space_id}")
+                f"to {self._dst_config.space_id}; TODO: tags need to honor parameters {pars_dict}")
         tag_set_name = item_id.split(slash_sign)[0]
         src_list_tag_sets = self._type_src_list_items_dict.get(item_type_tag_sets)
         src_tag_set = find_item(lst=src_list_tag_sets, key=name_key, value=tag_set_name)
@@ -795,17 +805,20 @@ class Migration:
         self._src_config.item_name = item_name
         self.clone_space_item_new_name()
 
-    def clone_space_item_new_name(self, new_item_name=None):
+    def clone_space_item_new_name(self, pars_dict: dict = None):
         item_type = self._dst_config.type
         item_name = self._src_config.item_name
         item_id = self._src_config.item_id
-        if not new_item_name:
-            new_item_name = item_name
+        item_badge = item_name if item_name else item_id
+        self._dst_common.log_info_print(
+            local_logger=self.logger,
+            msg=f"cloning {item_type} {item_badge} from {self._src_config.space_id} on server "
+                f"{self._src_config.endpoint} to {self._dst_config.space_id} on server {self._dst_config.endpoint}"
+                f"with parameters {pars_dict}")
         self._all_types = inside_space_download_types
         self._initialize_maps()
         if item_type in inside_space_clone_types:
-            self._clone_item_to_space(item_type=item_type, item_name=item_name, item_id=item_id,
-                                      new_item_name=new_item_name)
+            self._clone_item_to_space(item_type=item_type, item_name=item_name, item_id=item_id, pars_dict=pars_dict)
         self._save_space_map()
 
     def clone_server(self, space_id_or_name_comma_delimited=None, item_types_comma_delimited=None):

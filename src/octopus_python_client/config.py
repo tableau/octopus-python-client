@@ -28,6 +28,7 @@ class BaseConfig:
         self.item_name = ""
         self.password = ""
         self.pem = False
+        self.project_id = ""
         self.space_id = ""
         self.user_name = ""
         self.data_path = os.getcwd()
@@ -52,7 +53,7 @@ class Config(BaseConfig):
         self.no_stdout = False
         self.overwrite = False
         self.package = False
-        self.project_id = ""
+        self.project_ids = []
         self.release_version = ""
         self.prev_releases = []
         self.release_notes = ""

@@ -5,11 +5,17 @@ from octopus_python_client.common import Common
 
 
 class ActionsWidgets(tk.Frame):
-    def __init__(self, parent, server: Common, source: Common):
+    def __init__(self, parent: tk.Frame, server: Common, source: Common, next_button: tk.Button = None,
+                 submit_button: tk.Button = None):
         super().__init__(parent)
         self.server = server
         self.source = source
+
+        self.next_button = next_button
+        self.submit_button = submit_button
+
         self.select_action_variable = None
+
         self.update_step()
 
     def update_step(self):

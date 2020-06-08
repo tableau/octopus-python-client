@@ -1,105 +1,89 @@
-import copy
 import tkinter as tk
+from tkinter import messagebox
 
 from octopus_python_client.actions import ACTIONS_DICT, Actions
-from octopus_python_client.common import Common, inside_space_clone_types, item_type_projects, name_key, id_key
-from octopus_python_client.utilities.helper import find_item
+from octopus_python_client.common import Common, inside_space_clone_types, item_type_projects, id_key, \
+    project_id_key
+from octopus_python_client.gui.common_widgets import CommonWidgets
 
 
 class OptionsWidgets(tk.Frame):
-    NO_TYPES_PER_ROW = 5
-    NO_PROJECTS_PER_ROW = 3
 
-    def __init__(self, parent, server: Common, source: Common):
+    def __init__(self, parent: tk.Frame, server: Common, source: Common, next_button: tk.Button = None,
+                 submit_button: tk.Button = None):
         super().__init__(parent)
         self.server = server
         self.source = source
-        self.types_var_dict = None
+
+        self.next_button = next_button
+        self.submit_button = submit_button
+
         self.project_id_var = None
+        self.project_ids_var = None
+        self.source_project_id_var = None
         self.type_var = None
+        self.types_var_dict = None
+
         self.update_step()
 
     def update_step(self):
         tk.Label(self, text=f"{self.server.config.action} ({ACTIONS_DICT.get(self.server.config.action)})",
                  bd=2, relief="groove").grid(sticky=tk.W)
         if self.server.config.action == Actions.ACTION_CLONE_SPACE:
-            self.set_check_types_frame()
+            self.types_var_dict = CommonWidgets.set_check_names_frame(
+                self, list_names=inside_space_clone_types, default_names=self.server.config.types,
+                title="Select types:")
         elif self.server.config.action == Actions.ACTION_CLONE_SPACE_ITEM:
-            self.set_radio_types_frame()
+            self.type_var = CommonWidgets.set_radio_names_frame(
+                parent=self, list_names=inside_space_clone_types, default_name=self.server.config.type,
+                title="Select type: ")
+        elif self.server.config.action == Actions.ACTION_CLONE_PROJECT_RELATED:
+            self.set_clone_project_related()
         elif self.server.config.action == Actions.ACTION_CREATE_RELEASE:
-            self.set_radio_projects_frame()
+            projects_list = self.server.get_list_from_one_type(item_type=item_type_projects)
+            self.project_id_var = CommonWidgets.set_radio_items_frame(
+                parent=self, list_items=projects_list, default_id=self.server.config.project_id,
+                title=f"Select a project: ")
 
-    def select_all_types(self):
-        for item_type in inside_space_clone_types:
-            self.types_var_dict.get(item_type).set("1")
+    def find_source_project_ids_list_with_type(self):
+        items_list = self.source.get_list_from_one_type(item_type=self.server.config.type)
+        projects_list = self.source.get_list_from_one_type(item_type=item_type_projects)
+        project_ids_set = set()
+        for item in items_list:
+            if item.get(project_id_key):
+                project_ids_set.add(item.get(project_id_key))
+        return [project for project in projects_list if project.get(id_key) in project_ids_set]
 
-    def deselect_all_types(self):
-        for item_type in inside_space_clone_types:
-            self.types_var_dict.get(item_type).set("0")
-
-    def set_radio_projects_frame(self):
-        projects_frame = tk.Frame(self)
-        tk.Label(projects_frame, text=f"Select a project:", bd=2).grid(row=0, sticky=tk.W, columnspan=2)
-        list_projects = self.server.get_list_from_one_type(item_type=item_type_projects)
-        list_projects.sort(key=lambda one_project: one_project.get(name_key).lower())
-        self.project_id_var = tk.StringVar()
-        project = find_item(lst=list_projects, key=id_key, value=self.server.config.project_id)
-        if project:
-            self.project_id_var.set(self.server.config.project_id)
-        else:
-            self.project_id_var.set(list_projects[0].get(id_key))
-        for index, project in enumerate(list_projects):
-            tk.Radiobutton(projects_frame, text=f"{project.get(name_key)}", variable=self.project_id_var,
-                           value=project.get(id_key), justify=tk.LEFT, command=lambda *args: None) \
-                .grid(row=1 + int(index / OptionsWidgets.NO_PROJECTS_PER_ROW),
-                      column=index % OptionsWidgets.NO_PROJECTS_PER_ROW, sticky=tk.W, columnspan=1)
-        projects_frame.grid(sticky=tk.W)
-
-    def set_radio_types_frame(self):
-        types_frame = tk.Frame(self)
-        tk.Label(types_frame, text=f"Select one item type", bd=2).grid(row=0, sticky=tk.W, columnspan=2)
-        self.type_var = tk.StringVar()
-        list_types = copy.deepcopy(inside_space_clone_types)
-        list_types.sort()
-        if self.server.config.type and self.server.config.type in list_types:
-            self.type_var.set(self.server.config.type)
-        else:
-            self.type_var.set(list_types[0])
-        for index, item_type in enumerate(list_types):
-            tk.Radiobutton(types_frame, text=f"{item_type}", variable=self.type_var, value=item_type, justify=tk.LEFT,
-                           command=lambda *args: None) \
-                .grid(row=1 + int(index / OptionsWidgets.NO_TYPES_PER_ROW),
-                      column=index % OptionsWidgets.NO_TYPES_PER_ROW, sticky=tk.W, columnspan=1)
-        types_frame.grid(sticky=tk.W)
-
-    def set_check_types_frame(self):
-        self.types_var_dict = {}
-        types_frame = tk.Frame(self)
-        tk.Label(types_frame, text=f"Select the item types you want", bd=2).grid(row=0, sticky=tk.W, columnspan=2)
-        tk.Button(types_frame, text='Select all types', command=self.select_all_types) \
-            .grid(row=0, column=2, sticky=tk.W, columnspan=1)
-        tk.Button(types_frame, text='Deselect all types', command=self.deselect_all_types) \
-            .grid(row=0, column=3, sticky=tk.W, columnspan=1)
-        for index, item_type in enumerate(inside_space_clone_types):
-            self.types_var_dict[item_type] = tk.StringVar()
-            tk.Checkbutton(types_frame, text=item_type, variable=self.types_var_dict.get(item_type)) \
-                .grid(row=int(1 + index / OptionsWidgets.NO_TYPES_PER_ROW),
-                      column=index % OptionsWidgets.NO_TYPES_PER_ROW, sticky=tk.W)
-            if item_type in self.server.config.types:
-                self.types_var_dict.get(item_type).set("1")
-            else:
-                self.types_var_dict.get(item_type).set("0")
-        types_frame.grid(sticky=tk.W)
+    def set_clone_project_related(self):
+        source_projects_list = self.find_source_project_ids_list_with_type()
+        if not source_projects_list:
+            messagebox.showerror(title=f"No item", message=f"{self.server.config.type} has no item")
+            self.next_button.config(state=tk.DISABLED)
+            return False
+        self.source_project_id_var = CommonWidgets.set_radio_items_frame(
+            parent=self, list_items=source_projects_list, default_id=self.source.config.project_id,
+            title=f"Select a source project having {self.server.config.type}: ")
+        CommonWidgets.directional_separator(parent=self, title=self.server.config.action)
+        projects_list = self.server.get_list_from_one_type(item_type=item_type_projects)
+        self.project_ids_var = CommonWidgets.set_check_items_frame(
+            parent=self, items_list=projects_list, default_ids=self.server.config.project_ids,
+            title=f"Select the destination projects to be copied with {self.server.config.type}: ")
 
     def process_config(self):
-        if self.server.config.action == Actions.ACTION_CLONE_SPACE:
+        if self.types_var_dict:
             self.server.config.types = []
             for item_type in inside_space_clone_types:
-                if self.types_var_dict.get(item_type).get() == "1":
+                if self.types_var_dict.get(item_type).get() == CommonWidgets.SELECTED:
                     self.server.config.types.append(item_type)
-        elif self.server.config.action == Actions.ACTION_CLONE_SPACE_ITEM:
+        if self.type_var and self.type_var.get():
             self.server.config.type = self.type_var.get()
-        elif self.server.config.action == Actions.ACTION_CREATE_RELEASE:
+        if self.project_id_var and self.project_id_var.get():
             self.server.config.project_id = self.project_id_var.get()
+        if self.source_project_id_var and self.source_project_id_var.get():
+            self.source.config.project_id = self.source_project_id_var.get()
+        if self.project_ids_var:
+            self.server.config.project_ids = [project_id for project_id, project_id_var in self.project_ids_var.items()
+                                              if project_id_var.get() == CommonWidgets.SELECTED]
+        self.source.config.save_config()
         self.server.config.save_config()
         return True

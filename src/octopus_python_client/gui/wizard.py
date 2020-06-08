@@ -36,7 +36,10 @@ class Wizard(tk.Frame):
             self.current_step_widgets.pack_forget()
 
         self.current_step_index = step
-        self.current_step_widgets = self.steps[step](self.content_frame, server=self.server, source=self.source)
+        self.next_button.config(state=tk.NORMAL)
+        self.submit_button.config(state=tk.NORMAL)
+        self.current_step_widgets = self.steps[step](parent=self.content_frame, server=self.server, source=self.source,
+                                                     next_button=self.next_button, submit_button=self.submit_button)
         self.current_step_widgets.pack(fill="both", expand=True)
 
         if step == 0:

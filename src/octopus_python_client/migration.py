@@ -30,9 +30,12 @@ class Migration:
         self._dst_config = dst_config
         self._src_common = Common(config=src_config)
         self._dst_common = Common(config=dst_config)
+
         self._all_types = inside_space_download_types
         self._dst_id_payload_dict = {}
         self._dst_tenant_variables_payload_dict = {}
+        self._project_id = None
+        self._spaces_dict = {}
         self._src_id_payload_dict = {}
         self._src_id_type_dict = {}
         self._src_id_vs_dst_id_dict = {}
@@ -42,7 +45,6 @@ class Migration:
         self._type_post_func_dict = {}
         self._type_prep_func_dict = {}
         self._type_src_list_items_dict = {}
-        self._spaces_dict = {}
 
     # search the type in the space and see if the matched item already exists
     def _find_matched_dst_item_by_src_item(self, src_item_with_dst_ids, item_type):
@@ -218,11 +220,13 @@ class Migration:
             msg = f"cloning {item_type} {src_item.get(name_key)} to {pars_dict.get(Constants.PROJECT_IDS_KEY)}"
             self._dst_common.log_info_print(msg=msg)
             for project_id in pars_dict.get(Constants.PROJECT_IDS_KEY):
+                self._project_id = project_id
                 msg = f"cloning {item_type} {src_item.get(name_key)} to {project_id}"
                 self._dst_common.log_info_print(msg=msg)
                 src_item[project_id_key] = project_id
                 self._src_id_vs_dst_id_dict.pop(item_id, None)
                 self._create_item_to_space(item_type=item_type, src_item=src_item)
+                self._project_id = None
             return
 
         return self._create_item_to_space(item_type=item_type, src_item=src_item)
@@ -539,6 +543,9 @@ class Migration:
             return dst_child_id
 
         src_child_copy = copy.deepcopy(src_child)
+        # this is for cloning runbooks, channels, or projecttriggers from one project to other projects
+        if src_child_copy.get(project_id_key) and self._project_id:
+            src_child_copy[project_id_key] = self._project_id
 
         # TODO ScopeValues seems redundant in variables; ScopeValues defines a general scope to be used for variable set
         # but ScopeValues does not scope a specific variable at all; ScopeValues in variable set payload not very useful

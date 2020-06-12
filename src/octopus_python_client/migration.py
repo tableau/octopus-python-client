@@ -14,7 +14,8 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     item_type_scoped_user_roles, user_role_id_key, runbook_process_prefix, published_runbook_snapshot_id_key, \
     item_id_prefix_to_type_dict, positive_integer_regex, team_id_key, outer_space_clone_types, item_type_users, \
     item_type_spaces, default_password, is_service_key, space_managers_teams, item_type_teams, package_id_key, \
-    comma_sign, cloned_from_project_id, item_type_runbook_processes, item_type_project_triggers
+    comma_sign, cloned_from_project_id, item_type_runbook_processes, item_type_project_triggers, file_extension_key, \
+    feed_id_key
 from octopus_python_client.config import Config
 from octopus_python_client.item_types import Constants
 from octopus_python_client.utilities.helper import find_item, save_file, find_matched_sub_list, log_raise_value_error
@@ -226,19 +227,52 @@ class Migration:
 
         return self._create_item_to_space(item_type=item_type, src_item=src_item)
 
-    def _clone_package(self, src_package_dict):
+    def _clone_single_package(self, src_package_copy_dict):
         if self._src_config.local_data:
             self._dst_common.log_info_print(
                 local_logger=self.logger,
                 msg=f"loading file from {self._src_config.data_path}/{self._src_config.space_id}/"
-                    f"{item_type_packages}/{src_package_dict.get(id_key)}")
-            content = self._src_common.open_local_package(package_dict=src_package_dict)
+                    f"{item_type_packages}/{src_package_copy_dict.get(id_key)}")
+            content = self._src_common.open_local_package(package_dict=src_package_copy_dict)
         else:
-            content = self._src_common.get_package(src_package_dict.get(id_key))
-        file_name = Common.construct_package_name(package_dict=src_package_dict)
-        return self._dst_common.post_package(file_name=file_name, content=content)
+            content = self._src_common.get_package(src_package_copy_dict.get(id_key))
+        file_name = Common.construct_package_name(package_dict=src_package_copy_dict)
+        dst_package = self._dst_common.post_package(file_name=file_name, content=content)
+        if isinstance(dst_package, dict) and dst_package.get(id_key):
+            self._src_id_vs_dst_id_dict[src_package_copy_dict.get(id_key)] = dst_package.get(id_key)
+        else:
+            self._src_id_vs_dst_id_dict[src_package_copy_dict.get(id_key)] = src_package_copy_dict.get(id_key)
+        return dst_package
+
+    def _clone_package(self, src_package_copy_dict: dict, src_package_dict: dict):
+        try:
+            if self._dst_config.package_history:
+                self._dst_common.log_info_print(
+                    msg=f"cloning all versions of {item_type_packages} {src_package_dict.get(package_id_key)}...")
+                package_history_list = self._src_common.get_package_history_list(package_dict=src_package_dict)
+                package_history_list.reverse()
+                dst_package = {}
+                for package_dict in package_history_list:
+                    self._dst_common.log_info_print(msg=f"cloning {item_type_packages} {package_dict.get(id_key)}...")
+                    package_dict[file_extension_key] = src_package_copy_dict.get(file_extension_key)
+                    package_dict[feed_id_key] = src_package_copy_dict.get(feed_id_key)
+                    dst_package = self._clone_single_package(src_package_copy_dict=package_dict)
+                return dst_package
+            else:
+                self._dst_common.log_info_print(
+                    msg=f"cloning the latest version of {item_type_packages} {src_package_dict.get(id_key)}...")
+                return self._clone_single_package(src_package_copy_dict=src_package_copy_dict)
+        except Exception as err:
+            self._dst_common.log_error_print(
+                local_logger=self.logger, item=src_package_copy_dict,
+                msg=f"Failed to clone package {src_package_dict.get(id_key)}; is history packages enabled? "
+                    f"{self._dst_config.package_history}; error: {err}")
+            return {}
 
     def _put_post_item_to_space(self, item_type, src_item_copy, src_item):
+        if item_type == item_type_packages:
+            dst_item = self._clone_package(src_package_copy_dict=src_item_copy, src_package_dict=src_item)
+            return dst_item, not isinstance(dst_item, dict)
         src_id_value = src_item.get(id_key)
         src_item_name = src_item.get(name_key)
         self.logger.info(
@@ -270,10 +304,7 @@ class Migration:
 
                 # sometimes, overwrite may not be successful due to different reasons, we can skip in most cases
                 try:
-                    if item_type == item_type_packages:
-                        dst_item = self._clone_package(src_package_dict=src_item)
-                    else:
-                        dst_item = self._dst_common.put_single_item(item_type=item_type, payload=src_item_copy)
+                    dst_item = self._dst_common.put_single_item(item_type=item_type, payload=src_item_copy)
                     self._dst_common.log_info_print(
                         local_logger=self.logger,
                         msg=f"{item_type} {src_item_name} {src_id_value} in space {self._src_config.space_id} "
@@ -293,10 +324,7 @@ class Migration:
                              f"{src_id_value} from space {self._src_config.space_id}, so creating it...")
             # ignore error and continue to process other items
             try:
-                if item_type == item_type_packages:
-                    dst_item = self._clone_package(src_package_dict=src_item)
-                else:
-                    dst_item = self._dst_common.post_single_item(item_type=item_type, payload=src_item_copy)
+                dst_item = self._dst_common.post_single_item(item_type=item_type, payload=src_item_copy)
                 self._dst_common.log_info_print(
                     local_logger=self.logger,
                     msg=f"{item_type} {src_item_name} {src_id_value} in space {self._src_config.space_id} was cloned "

@@ -32,7 +32,7 @@ space_map = "space_map"
 success_string = "Success"
 tenants_prefix = "Tenants"
 underscore_sign = "_"
-url_all_pages = "?skip=0&take=2147483647"
+url_all_pages = "skip=0&take=2147483647"
 yaml_ext = ".yaml"
 
 # dict keys
@@ -415,7 +415,7 @@ class Common:
                 url_suffix = space_url + item_type + slash_all
                 return call_octopus(config=self.config, url_suffix=url_suffix)
             else:
-                url_suffix = space_url + item_type + url_all_pages
+                url_suffix = space_url + item_type + "?" + url_all_pages
                 return call_octopus(config=self.config, url_suffix=url_suffix)
         except Exception as err:
             # TODO bug https://help.octopus.com/t/504-gateway-time-out-on-getting-all-variables/24732
@@ -448,10 +448,20 @@ class Common:
             list_users = self.get_list_items_from_all_items(all_items=all_items)
             user_ids = [user.get(id_key) for user in list_users]
             self.get_ext_types_save(item_type=item_type_users, item_ids=user_ids)
-        elif item_type == item_type_packages and self.config.package:
+        elif item_type == item_type_packages:
             list_packages = self.get_list_items_from_all_items(all_items=all_items)
             for package in list_packages:
-                self.save_package(package_dict=package)
+                self.log_info_print(msg=f"downloading {package.get(id_key)}...")
+                if self.config.package_history:
+                    self.log_info_print(msg=f"downloading all historical versions of {package.get(package_id_key)}")
+                    package_history_list = self.get_package_history_list(package)
+                    for historical_package in package_history_list:
+                        self.log_info_print(msg=f"downloading {historical_package.get(id_key)}")
+                        historical_package[file_extension_key] = package.get(file_extension_key)
+                        self.save_package(package_dict=historical_package)
+                else:
+                    self.log_info_print(msg=f"downloading the latest version of {package.get(id_key)}")
+                    self.save_package(package_dict=package)
         return all_items
 
     def delete_types(self, item_types_comma_delimited=None):
@@ -1069,3 +1079,30 @@ class Common:
             if item.get(condition_key) == condition_id:
                 list_items.append(item)
         return list_items
+
+    def get_item_name_by_id(self, item_type: str, item_id: str):
+        item = self.get_or_delete_single_item_by_id(item_type=item_type, item_id=item_id)
+        return item.get(name_key)
+
+    def get_package_history_list(self, package_dict: dict):
+        if package_dict:
+            address = f"feeds/{package_dict.get(feed_id_key)}/packages/versions?packageId=" \
+                      f"{package_dict.get(package_id_key)}&{url_all_pages}"
+            package_history_dict = self.request_octopus_item(address=address)
+            return self.get_list_items_from_all_items(all_items=package_history_dict)
+        else:
+            return []
+
+    def get_package_history_list_by_name(self, package_name: str):
+        packages_list = self.get_list_from_one_type(item_type=item_type_packages)
+        package_dict = find_item(lst=packages_list, key=package_id_key, value=package_name)
+        return self.get_package_history_list(package_dict=package_dict)
+
+    def get_project_releases_sorted_list(self, project_id: str):
+        self.logger.info(f"loading all releases from project {project_id}")
+        address = f"{item_type_projects}/{project_id}/{item_type_releases}"
+        releases = self.request_octopus_item(address=address)
+        releases_list = self.get_list_items_from_all_items(all_items=releases)
+        # In literal string: Releases-10000 < Releases-9999 so converting to integer to compare
+        releases_list.sort(key=lambda one_release: int(one_release.get(id_key).split(hyphen_sign)[1]), reverse=True)
+        return releases_list

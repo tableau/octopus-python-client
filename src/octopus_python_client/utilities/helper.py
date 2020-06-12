@@ -40,7 +40,12 @@ def find_matched_sub_list(lst=None, match_dict=None, ignore_case=False):
         # logger.info(f"working on the index {index} of the input list")
         dic = list_copy[index]
         for match_key, match_value in match_dict.items():
-            if ignore_case and dic.get(match_key) != match_value and dic.get(match_key).lower() == match_value.lower():
+            if not match_value or not dic.get(match_key):
+                if match_value != dic.get(match_key):
+                    del list_copy[index]
+                    break
+            elif ignore_case and dic.get(match_key) != match_value and \
+                    dic.get(match_key).lower() == match_value.lower():
                 logger.warning(f"for key {match_key}, value of the {index}th item in the list is {dic.get(match_key)}, "
                                f"and value of the match dict is {match_value}. They are case insensitively same")
             elif not ignore_case and dic.get(match_key) != match_value \

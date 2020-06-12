@@ -59,7 +59,7 @@ class ServersWidgets(tk.Frame):
 
         tk.Label(server_frame, text="API-KEY (must start with API-)").grid(row=2, column=0, sticky=tk.E, columnspan=4)
         api_key_variable = tk.StringVar()
-        tk.Entry(server_frame, width=40, show="*", textvariable=api_key_variable) \
+        tk.Entry(server_frame, width=CommonWidgets.WIDTH_40, show="*", textvariable=api_key_variable) \
             .grid(row=2, column=4, columnspan=4, sticky=tk.W)
         api_key_variable.set(config.api_key if config.api_key else "")
 
@@ -68,13 +68,13 @@ class ServersWidgets(tk.Frame):
 
         tk.Label(server_frame, text="user_name").grid(row=3, column=4, sticky=tk.E, columnspan=1)
         user_name_variable = tk.StringVar()
-        tk.Entry(server_frame, width=10, textvariable=user_name_variable) \
+        tk.Entry(server_frame, width=CommonWidgets.WIDTH_10, textvariable=user_name_variable) \
             .grid(row=3, column=5, sticky=tk.W, columnspan=1)
         user_name_variable.set(config.user_name if config.user_name else "")
 
         tk.Label(server_frame, text="password").grid(row=3, column=6, columnspan=1, sticky=tk.E)
         password_variable = tk.StringVar()
-        tk.Entry(server_frame, width=10, show="*", textvariable=password_variable) \
+        tk.Entry(server_frame, width=CommonWidgets.WIDTH_10, show="*", textvariable=password_variable) \
             .grid(row=3, column=7, sticky=tk.W, columnspan=1)
         password_variable.set(config.password if config.password else "")
 

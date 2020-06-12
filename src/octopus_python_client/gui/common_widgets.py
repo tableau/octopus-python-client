@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class CommonWidgets:
     COMBOBOX_VALUES_KEY = "values"
-    COMBOBOX_WIDTH = 80
+    READ_ONLY = "readonly"
     ROW_0 = 0
     ROW_1 = 1
     ROW_SIZE = 5
@@ -20,6 +20,11 @@ class CommonWidgets:
     SPAN_2 = 2
     SPAN_3 = 3
     UNSELECTED = "0"
+    WIDTH_10 = 10
+    WIDTH_20 = 20
+    WIDTH_40 = 40
+    WIDTH_80 = 80
+    WIDTH_120 = 120
 
     # this is for list of strings
     @staticmethod
@@ -132,11 +137,13 @@ class CommonWidgets:
 
     @staticmethod
     def set_combobox_items_frame(parent, texts_list: list, bind_func, default_text: str = None,
-                                 title: str = "Select: "):
+                                 title: str = "Select: ", width=WIDTH_80):
+        text_var = tk.StringVar()
+        if not texts_list:
+            return text_var
         items_frame = tk.Frame(parent)
         tk.Label(items_frame, text=title, bd=2).grid(sticky=tk.W)
-        text_var = tk.StringVar()
-        item_combobox = ttk.Combobox(items_frame, width=CommonWidgets.COMBOBOX_WIDTH, textvariable=text_var)
+        item_combobox = ttk.Combobox(items_frame, width=width, textvariable=text_var)
         texts_list_copy = copy.deepcopy(texts_list)
         item_combobox[CommonWidgets.COMBOBOX_VALUES_KEY] = tuple(texts_list_copy)
         default_index = 0

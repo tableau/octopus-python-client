@@ -1,11 +1,13 @@
+import getpass
 import logging
 import threading
 import tkinter as tk
+from time import strftime, localtime
 from tkinter import messagebox
 
 from octopus_python_client.actions import Actions, ACTIONS_DICT
 from octopus_python_client.common import Common, item_type_channels, project_id_key, name_key, id_key, \
-    item_type_projects
+    item_type_projects, release_versions_key, version_key, item_type_packages
 from octopus_python_client.gui.common_widgets import CommonWidgets
 from octopus_python_client.item_types import Constants
 from octopus_python_client.migration import Migration
@@ -17,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 class SubmitWidgets(tk.Frame):
     DIVIDER_BAR = "|"
+    TAS = "tas"
 
     def __init__(self, parent: tk.Frame, server: Common, source: Common, next_button: tk.Button = None,
                  submit_button: tk.Button = None):
@@ -28,12 +31,15 @@ class SubmitWidgets(tk.Frame):
         self.submit_button = submit_button
 
         self.channel_id_var = None
-        self.item_id_name_var = None
+        self.combobox_var = None
         self.new_item_name_var = None
         self.new_name_entry = None
         self.overwrite_var = None
+        self.package_history_var = None
+        self.package_name = ""
         self.release_notes_var = None
-        self.release_version_var = None
+        self.release_version_num_var = None
+        self.services_versions_vs_name = ""
 
         self.update_step()
 
@@ -42,9 +48,6 @@ class SubmitWidgets(tk.Frame):
                  bd=2, relief="groove").grid(sticky=tk.W)
         if self.server.config.action == Actions.ACTION_CREATE_RELEASE:
             self.set_create_release_frame()
-        elif self.server.config.action == Actions.ACTION_CLONE_SPACE_ITEM:
-            items_list = self.source.get_list_from_one_type(self.server.config.type)
-            self.set_clone_item_frame(items_list=items_list)
         elif self.server.config.action == Actions.ACTION_CLONE_PROJECT_RELATED:
             if not self.server.config.project_ids:
                 messagebox.showerror(title=f"No project selected", message=f"No destination project was selected!")
@@ -55,44 +58,92 @@ class SubmitWidgets(tk.Frame):
                 condition_id=self.source.config.project_id)
             self.set_clone_item_frame(items_list=items_list)
         elif self.server.config.action == Actions.ACTION_CLONE_SPACE:
-            self.set_clone_space_frame()
+            if item_type_packages in self.server.config.types:
+                self.set_package_history_widget()
+            self.set_overwrite_widget()
+        elif self.server.config.action == Actions.ACTION_CLONE_SPACE_ITEM:
+            items_list = self.source.get_list_from_one_type(self.server.config.type)
+            self.set_clone_item_frame(items_list=items_list)
         else:
             self.submit_button.config(state=tk.DISABLED)
+
+    def set_release_notes(self, event=None):
+        logger.info(msg=str(event))
+        release_notes = "{'packages':{'" + self.package_name + "':'" + self.combobox_var.get() + \
+                        "'},'release_versions':'" + self.services_versions_vs_name + "'}"
+        self.release_notes_var.set(release_notes)
+        self.server.config.package_version = self.combobox_var.get()
+
+    def set_services_versions_frame(self, project_name: str):
+        tk.Label(self, text="Service versions pinned in Octopus variable set:").grid(sticky=tk.W)
+        services_versions_vs_name_var = tk.StringVar()
+        services_versions_vs_name_entry = tk.Entry(self, width=CommonWidgets.WIDTH_40,
+                                                   textvariable=services_versions_vs_name_var)
+        services_versions_vs_name_entry.grid(sticky=tk.W)
+        services_versions_vs_name_entry.config(state=CommonWidgets.READ_ONLY)
+        services_versions_vs_name_var.set(self.services_versions_vs_name)
+
+        self.package_name = f"{SubmitWidgets.TAS}.{project_name}"
+        package_history_list = self.server.get_package_history_list_by_name(package_name=self.package_name)
+        package_versions_list = [package.get(version_key) for package in package_history_list]
+        self.combobox_var = CommonWidgets.set_combobox_items_frame(
+            parent=self, texts_list=package_versions_list, bind_func=self.set_release_notes,
+            default_text=self.server.config.package_version, title=f"Select {self.package_name} version:",
+            width=CommonWidgets.WIDTH_20)
+
+    def set_release_notes_entry(self):
+        tk.Label(self, text="Release notes (grayed out if using pinned services versions):").grid(sticky=tk.W)
+        self.release_notes_var = tk.StringVar()
+        self.release_notes_var.set(self.server.config.release_notes)
+        release_notes_entry = tk.Entry(self, width=CommonWidgets.WIDTH_120, textvariable=self.release_notes_var)
+        release_notes_entry.grid(sticky=tk.W)
+        return release_notes_entry
 
     def set_create_release_frame(self):
         self.set_radio_channels_frame()
 
         tk.Label(self, text="Release version number: ").grid(sticky=tk.W)
-        self.release_version_var = tk.StringVar()
-        self.release_version_var.set(self.server.config.release_version)
-        tk.Entry(self, width=20, textvariable=self.release_version_var).grid(sticky=tk.W)
+        self.release_version_num_var = tk.StringVar()
+        local_time = strftime("%Y.%m%d.%H%M%S", localtime())
+        current_user = getpass.getuser()
+        self.release_version_num_var.set(f"{local_time}-{current_user}")
+        tk.Entry(self, width=CommonWidgets.WIDTH_20, textvariable=self.release_version_num_var).grid(sticky=tk.W)
 
-        tk.Label(self, text="Release notes: ").grid(sticky=tk.W)
-        self.release_notes_var = tk.StringVar()
-        self.release_notes_var.set(self.server.config.release_notes)
-        tk.Entry(self, width=80, textvariable=self.release_notes_var).grid(sticky=tk.W)
+        project_name = self.server.get_item_name_by_id(
+            item_type=item_type_projects, item_id=self.server.config.project_id)
+        self.services_versions_vs_name = release_versions_key + "." + project_name
+        services_versions_list = self.server.get_list_variables_by_set_name_or_id(
+            set_name=self.services_versions_vs_name)
+        if services_versions_list:
+            self.set_services_versions_frame(project_name=project_name)
+            self.set_release_notes_entry().config(state=CommonWidgets.READ_ONLY)
+            self.set_release_notes()
+        else:
+            self.set_release_notes_entry()
 
     def set_clone_item_frame(self, items_list: list):
         if not self.set_combobox_items_frame(items_list=items_list):
             return
 
         tk.Label(self, text="New item name to be cloned (grayed out if the item has no name): ").grid(sticky=tk.W)
-        self.new_name_entry = tk.Entry(self, width=40, textvariable=self.new_item_name_var)
+        self.new_name_entry = tk.Entry(self, width=CommonWidgets.WIDTH_40, textvariable=self.new_item_name_var)
         self.new_name_entry.grid(sticky=tk.W)
         self.set_new_item_name()
 
+        if item_type_packages == self.server.config.type:
+            self.set_package_history_widget()
         self.set_overwrite_widget()
 
     def set_new_item_name(self, event=None):
         logger.info(msg=str(event))
-        if SubmitWidgets.DIVIDER_BAR in self.item_id_name_var.get():
-            item_name_id = self.item_id_name_var.get().split(SubmitWidgets.DIVIDER_BAR)
+        if SubmitWidgets.DIVIDER_BAR in self.combobox_var.get():
+            item_name_id = self.combobox_var.get().split(SubmitWidgets.DIVIDER_BAR)
             item_name = item_name_id[0]
             self.new_item_name_var.set(item_name)
             item_id = item_name_id[1]
         else:
-            self.new_name_entry.config(state=tk.DISABLED)
-            item_id = self.item_id_name_var.get()
+            self.new_name_entry.config(state=CommonWidgets.READ_ONLY)
+            item_id = self.combobox_var.get()
         self.source.config.item_id = item_id
         self.source.config.item_name = ""
 
@@ -118,7 +169,7 @@ class SubmitWidgets(tk.Frame):
         default_item = find_item(lst=items_list, key=id_key, value=self.source.config.item_id)
         default_text = SubmitWidgets.construct_item_name_id_text(item=default_item)
         texts_list = [SubmitWidgets.construct_item_name_id_text(item=item) for item in items_list]
-        self.item_id_name_var = CommonWidgets.set_combobox_items_frame(
+        self.combobox_var = CommonWidgets.set_combobox_items_frame(
             parent=self, texts_list=texts_list, bind_func=self.set_new_item_name, default_text=default_text,
             title=f"Select an item for type {self.server.config.type} (item name|id, or id only for items without "
                   f"name):")
@@ -132,23 +183,32 @@ class SubmitWidgets(tk.Frame):
             parent=self, list_items=channels_list, default_id=self.server.config.channel_id,
             title=f"Select a channel:")
 
-    def set_clone_space_frame(self):
-        tk.Label(self, text=f"Options", bd=2).grid(sticky=tk.W)
-        self.set_overwrite_widget()
-
     def set_overwrite_widget(self):
         self.overwrite_var = tk.StringVar()
-        tk.Checkbutton(self, text="Overwrite the existing entities with the same name (skip if unchecked)",
-                       variable=self.overwrite_var).grid(sticky=tk.W)
+        tk.Checkbutton(self, text="Overwrite the existing entities with the same name (skip the existing ones with the "
+                                  "same name if unchecked)", variable=self.overwrite_var).grid(sticky=tk.W)
         self.overwrite_var.set(CommonWidgets.SELECTED if self.server.config.overwrite else CommonWidgets.UNSELECTED)
+
+    def set_package_history_widget(self):
+        self.package_history_var = tk.StringVar()
+        tk.Checkbutton(
+            self, text="Clone all historical versions of the packages (clone only the latest version if unchecked)",
+            variable=self.package_history_var).grid(sticky=tk.W)
+        self.package_history_var.set(
+            CommonWidgets.SELECTED if self.server.config.package_history else CommonWidgets.UNSELECTED)
 
     def process_config(self):
         if self.overwrite_var:
             self.server.config.overwrite = True if self.overwrite_var.get() == CommonWidgets.SELECTED else False
-        if self.server.config.action == Actions.ACTION_CREATE_RELEASE:
+        if self.channel_id_var:
             self.server.config.channel_id = self.channel_id_var.get()
-            self.server.config.release_version = self.release_version_var.get()
+        if self.release_version_num_var:
+            self.server.config.release_version = self.release_version_num_var.get()
+        if self.release_notes_var:
             self.server.config.release_notes = self.release_notes_var.get()
+        if self.package_history_var:
+            self.server.config.package_history = \
+                True if self.package_history_var.get() == CommonWidgets.SELECTED else False
         self.server.config.save_config()
         self.source.config.save_config()
         return True
@@ -165,7 +225,7 @@ class SubmitWidgets(tk.Frame):
         elif self.server.config.action == Actions.ACTION_CLONE_SPACE_ITEM:
             # msg = f"cloning {item_type} {item_badge} from {self._src_config.space_id} on server "
             # f"{self._src_config.endpoint} to {self._dst_config.space_id} on server {self._dst_config.endpoint}")
-            msg = f"Are you sure you want to clone type {self.server.config.type} of {self.item_id_name_var.get()}" \
+            msg = f"Are you sure you want to clone type {self.server.config.type} of {self.combobox_var.get()}" \
                   f" from {self.source.config.space_id} on server {self.source.config.endpoint} to " \
                   f"{self.new_item_name_var.get()} in {self.server.config.space_id} on server " \
                   f"{self.server.config.endpoint}? The existing entities with the same name will " \
@@ -177,7 +237,7 @@ class SubmitWidgets(tk.Frame):
                 Migration(src_config=self.source.config, dst_config=self.server.config) \
                     .clone_space_item_new_name(pars_dict=pars_dict)
         elif self.server.config.action == Actions.ACTION_CLONE_PROJECT_RELATED:
-            msg = f"Are you sure you want to clone type {self.server.config.type} of {self.item_id_name_var.get()}" \
+            msg = f"Are you sure you want to clone type {self.server.config.type} of {self.combobox_var.get()}" \
                   f" from {self.source.config.space_id} on server {self.source.config.endpoint} to " \
                   f"{self.new_item_name_var.get()} in projects {self.server.config.project_ids} in " \
                   f"{self.server.config.space_id} on server {self.server.config.endpoint}? " \

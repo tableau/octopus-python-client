@@ -2,7 +2,7 @@ import json
 import logging
 from pprint import pformat
 
-from octopus_python_client.common import item_type_deployment_processes, item_type_projects, id_key, hyphen_sign, \
+from octopus_python_client.common import item_type_deployment_processes, item_type_projects, id_key, \
     deployment_process_id_key, item_type_channels, packages_key, action_name_key, package_reference_name_key, Common, \
     feed_id_key, package_id_key, item_type_feeds, item_type_packages, version_key, items_key, name_key, timestamp_key, \
     value_key, project_id_key, next_version_increment_key, release_notes_key, channel_id_key, selected_packages_key, \
@@ -109,8 +109,6 @@ class ReleaseDeployment:
 
     def _get_prev_release_match_commit_date_time(self, list_releases: list):
         if list_releases:
-            # In literal string: Releases-10000 < Releases-9999 so converting to integer to compare
-            list_releases.sort(key=lambda one_release: int(one_release.get(id_key).split(hyphen_sign)[1]), reverse=True)
             for release in list_releases:
                 logger.info(f"checking {release.get(id_key)} for project {self._project_id}...")
                 if release.get(release_notes_key):
@@ -139,10 +137,7 @@ class ReleaseDeployment:
     def _generate_commits_notes(self):
         logger.info("generating the release notes for the commits history")
         # find the latest/previous release for this project
-        logger.info(f"loading all releases from project {self._project_id}")
-        address = f"{item_type_projects}/{self._project_id}/{item_type_releases}"
-        releases = self._common.request_octopus_item(address=address)
-        list_releases = self._common.get_list_items_from_all_items(all_items=releases)
+        list_releases = self._common.get_project_releases_sorted_list(project_id=self._project_id)
         topic_note, prev_release_match_commit_date_time = \
             self._get_prev_release_match_commit_date_time(list_releases=list_releases)
         list_notes = ["\n========== below is auto-generated notes ==========", topic_note]
@@ -230,14 +225,26 @@ class ReleaseDeployment:
         return self._release_response
 
     @staticmethod
-    def create_deployment_direct(config: Config, release_id, environment_name, tenant_name, comments=None):
+    def create_deployment_direct(config: Config, environment_name, tenant_name, release_id=None, project_name=None,
+                                 comments=None):
         logger.info(f"creating a deployment for {release_id} in space {config.space_id} with environment "
                     f"{environment_name}, tenant {tenant_name} and comments: {comments}")
         common = Common(config=config)
 
-        assert release_id, "release_id must not be empty!"
+        # TODO project_name
+        assert (release_id or project_name) and not (release_id and project_name), \
+            "either release_id or project_name must exist, not both!"
         assert environment_name, "environment_name must not be empty!"
         assert tenant_name, "tenant_name must not be empty!"
+
+        if not release_id:
+            logger.info(f"Get the latest release id for project {project_name}")
+            project_id = common.get_item_id_by_name(item_type=item_type_projects, item_name=project_name)
+            releases_list = common.get_project_releases_sorted_list(project_id=project_id)
+            if not releases_list:
+                raise ValueError(f"Project {project_name} does not have any releases. Please create a release first")
+            release_id = releases_list[0].get(id_key)
+            logger.info(f"The latest release id is {release_id}")
 
         deployment_request_payload = \
             {release_id_key: release_id,

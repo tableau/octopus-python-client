@@ -22,6 +22,7 @@ class BaseConfig:
 
     def __init__(self, is_source_server: bool = False):
         self.api_key = ""
+        self.data_path = os.getcwd()
         self.endpoint = ""
         self.is_source_server = is_source_server
         self.item_id = ""
@@ -31,7 +32,6 @@ class BaseConfig:
         self.project_id = ""
         self.space_id = ""
         self.user_name = ""
-        self.data_path = os.getcwd()
         self._base_config_dict = copy.deepcopy(self.__dict__)
 
 
@@ -47,16 +47,18 @@ class Config(BaseConfig):
 
     def __init__(self, configuration_file_name: str = None, is_source_server: bool = False):
         super().__init__(is_source_server=is_source_server)
+
         self.action = Actions.ACTION_GET_SPACES
         self.channel_id = ""
         self.local_data = False
         self.no_stdout = False
         self.overwrite = False
-        self.package = False
-        self.project_ids = []
-        self.release_version = ""
+        self.package_history = False
+        self.package_version = ""
         self.prev_releases = []
+        self.project_ids = []
         self.release_notes = ""
+        self.release_version = ""
         self.type = ""
         self.types = []
 

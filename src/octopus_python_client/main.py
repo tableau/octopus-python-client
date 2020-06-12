@@ -98,8 +98,7 @@ class OctopusClient:
         parser.add_argument("-cm", "--comments", help="comments")
         parser.add_argument("-eps", "--excluded_projects", help="comma delimited project names")
         parser.add_argument("-pgs", "--project_groups", help="comma delimited project group names")
-        parser.add_argument("-pkg", "--package", help="if present, package = True, download package to local file",
-                            action="store_true")
+        parser.add_argument("-pkg", "--package_history", help="if present, package_history = True", action="store_true")
 
         args, unknown = parser.parse_known_args()
         return args
@@ -149,10 +148,10 @@ class OctopusClient:
             self._target_config.no_stdout = True
         else:
             self._target_config.no_stdout = False
-        if args.package:
-            self._target_config.package = True
+        if args.package_history:
+            self._target_config.package_history = True
         else:
-            self._target_config.package = False
+            self._target_config.package_history = False
 
         if args.space_id_name:
             self._target_config.space_id = self._target_common.verify_space(space_id_name=args.space_id_name)
@@ -329,7 +328,7 @@ class OctopusClient:
         elif self._target_config.action == Actions.ACTION_CREATE_DEPLOYMENT:
             ReleaseDeployment.create_deployment_direct(
                 config=self._target_config, release_id=args.release_id, environment_name=args.environment_name,
-                tenant_name=args.tenant_name, comments=args.comments)
+                tenant_name=args.tenant_name, comments=args.comments, project_name=args.project_name)
         elif self._target_config.action == Actions.ACTION_CREATE_RELEASE_DEPLOYMENT:
             ReleaseDeployment.create_release_deployment(
                 config=self._target_config, release_version=args.release_version, project_name=args.project_name,

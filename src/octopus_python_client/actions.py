@@ -42,7 +42,8 @@ ACTIONS_DICT = {
                                           f"project to other projects",
     Actions.ACTION_CLONE_SPACE: "clone multiple types from one space to another space on the same server or the "
                                 "different server",
-    Actions.ACTION_CLONE_SPACE_ITEM: "clone one item within a space, to another space, or to another server",
+    Actions.ACTION_CLONE_SPACE_ITEM: "clone one item of a specific type within a space, to another space, or to another"
+                                     " server",
     Actions.ACTION_CREATE_RELEASE: "create a new release for a project"
 }
 

@@ -202,11 +202,14 @@ class ReleaseDeployment:
         else:
             self._release_request_payload[release_notes_key] = commit_notes
 
-    # release version must be unique for each release
-    def create_release(self, release_version=None):
+    def _process_package_versions_notes(self):
         self._get_deployment_process_template()
         self._get_selected_packages()
         self._process_notes()
+
+    # release version must be unique for each release
+    def create_release(self, release_version=None):
+        self._process_package_versions_notes()
         if not release_version:
             release_version = self._template.get(next_version_increment_key)
         self._release_request_payload[version_key] = release_version
@@ -276,6 +279,19 @@ class ReleaseDeployment:
     def release_response(self):
         logger.info(f"get the release response for {self._release_id}")
         return self._release_response
+
+    def _extract_package_versions(self):
+        package_versions_dict = {}
+        for package in self._selected_packages:
+            if package.get(package_reference_name_key):
+                package_versions_dict[package.get(package_reference_name_key)] = package.get(version_key)
+        return package_versions_dict
+
+    @staticmethod
+    def get_package_versions(config: Config, project_name, channel_name=None, notes=None):
+        release = ReleaseDeployment(config=config, project_name=project_name, channel_name=channel_name, notes=notes)
+        release._process_package_versions_notes()
+        return release._extract_package_versions()
 
     @staticmethod
     def create_release_direct(config: Config, release_version, project_name, channel_name=None, notes=None):

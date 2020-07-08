@@ -2,14 +2,15 @@ import getpass
 import logging
 import threading
 import tkinter as tk
+from pprint import pformat
 from time import strftime, localtime
 from tkinter import messagebox
 
 from octopus_python_client.actions import Actions, ACTIONS_DICT
 from octopus_python_client.common import Common, item_type_channels, project_id_key, name_key, id_key, \
     item_type_projects, release_versions_key, version_key, item_type_packages
+from octopus_python_client.constants import Constants
 from octopus_python_client.gui.common_widgets import CommonWidgets
-from octopus_python_client.item_types import Constants
 from octopus_python_client.migration import Migration
 from octopus_python_client.release_deployment import ReleaseDeployment
 from octopus_python_client.utilities.helper import find_item
@@ -39,6 +40,7 @@ class SubmitWidgets(tk.Frame):
         self.package_name = ""
         self.release_notes_var = None
         self.release_version_num_var = None
+        self.services_versions_text = None
         self.services_versions_vs_name = ""
 
         self.update_step()
@@ -73,6 +75,7 @@ class SubmitWidgets(tk.Frame):
                         "'},'release_versions':'" + self.services_versions_vs_name + "'}"
         self.release_notes_var.set(release_notes)
         self.server.config.package_version = self.combobox_var.get()
+        self.update_services_versions()
 
     def set_services_versions_frame(self, project_name: str):
         tk.Label(self, text="Service versions pinned in Octopus variable set:").grid(sticky=tk.W)
@@ -92,12 +95,30 @@ class SubmitWidgets(tk.Frame):
             width=CommonWidgets.WIDTH_20)
 
     def set_release_notes_entry(self):
-        tk.Label(self, text="Release notes (grayed out if using pinned services versions):").grid(sticky=tk.W)
+        tk.Label(self, text="Release notes (grayed out if the release notes is a python dictionary and used for pinning"
+                            " package versions):").grid(sticky=tk.W)
         self.release_notes_var = tk.StringVar()
-        self.release_notes_var.set(self.server.config.release_notes)
+        # self.release_notes_var.set(self.server.config.release_notes)
         release_notes_entry = tk.Entry(self, width=CommonWidgets.WIDTH_120, textvariable=self.release_notes_var)
         release_notes_entry.grid(sticky=tk.W)
         return release_notes_entry
+
+    def update_services_versions(self):
+        self.services_versions_text.config(state=tk.NORMAL)
+        self.services_versions_text.delete(1.0, tk.END)
+        project_name = self.server.get_item_name_by_id(item_type=item_type_projects,
+                                                       item_id=self.server.config.project_id)
+        channel_name = self.server.get_item_name_by_id(item_type=item_type_channels, item_id=self.channel_id_var.get())
+        select_packages_dict = ReleaseDeployment.get_package_versions(
+            config=self.server.config, project_name=project_name, channel_name=channel_name,
+            notes=self.release_notes_var.get())
+        self.services_versions_text.insert(tk.END, pformat(select_packages_dict))
+        self.services_versions_text.config(state=tk.DISABLED)
+
+    def set_services_versions(self):
+        tk.Label(self, text="The package versions which will be used for creating the new release:").grid(sticky=tk.W)
+        self.services_versions_text = tk.Text(self, width=CommonWidgets.WIDTH_80, height=CommonWidgets.HEIGHT_7)
+        self.services_versions_text.grid(sticky=tk.W)
 
     def set_create_release_frame(self):
         self.set_radio_channels_frame()
@@ -117,6 +138,7 @@ class SubmitWidgets(tk.Frame):
         if services_versions_list:
             self.set_services_versions_frame(project_name=project_name)
             self.set_release_notes_entry().config(state=CommonWidgets.READ_ONLY)
+            self.set_services_versions()
             self.set_release_notes()
         else:
             self.set_release_notes_entry()
@@ -179,14 +201,19 @@ class SubmitWidgets(tk.Frame):
     def set_radio_channels_frame(self):
         channels_list = self.server.get_list_items_by_conditional_id(
             item_type=item_type_channels, condition_key=project_id_key, condition_id=self.server.config.project_id)
+        default_channel = find_item(lst=channels_list, key=Constants.IS_DEFAULT, value=True)
+        if default_channel:
+            default_channel_id = default_channel.get(id_key)
+        else:
+            default_channel_id = self.server.config.channel_id
         self.channel_id_var = CommonWidgets.set_radio_items_frame(
-            parent=self, list_items=channels_list, default_id=self.server.config.channel_id,
-            title=f"Select a channel:")
+            parent=self, list_items=channels_list, default_id=default_channel_id,
+            title=f"Select a channel (default one is pre-selected):")
 
     def set_overwrite_widget(self):
         self.overwrite_var = tk.StringVar()
-        tk.Checkbutton(self, text="Overwrite the existing entities with the same name (skip the existing ones with the "
-                                  "same name if unchecked)", variable=self.overwrite_var).grid(sticky=tk.W)
+        tk.Checkbutton(self, text="Overwrite the existing entities of the same names, including the referenced entities"
+                                  " (will not overwrite if unchecked)", variable=self.overwrite_var).grid(sticky=tk.W)
         self.overwrite_var.set(CommonWidgets.SELECTED if self.server.config.overwrite else CommonWidgets.UNSELECTED)
 
     def set_package_history_widget(self):
@@ -214,6 +241,7 @@ class SubmitWidgets(tk.Frame):
         return True
 
     def run_thread(self):
+        run_action = False
         if self.server.config.action == Actions.ACTION_CLONE_SPACE:
             msg = f"Are you sure you want to clone types {self.server.config.types} from " \
                   f"{self.source.config.space_id} on server {self.source.config.endpoint} to " \
@@ -221,6 +249,7 @@ class SubmitWidgets(tk.Frame):
                   f"The existing entities with the same name will " \
                   f"{' ' if self.server.config.overwrite else 'NOT '}be overwritten."
             if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
+                run_action = True
                 Migration(src_config=self.source.config, dst_config=self.server.config).clone_space_types()
         elif self.server.config.action == Actions.ACTION_CLONE_SPACE_ITEM:
             # msg = f"cloning {item_type} {item_badge} from {self._src_config.space_id} on server "
@@ -231,6 +260,7 @@ class SubmitWidgets(tk.Frame):
                   f"{self.server.config.endpoint}? The existing entities with the same name will " \
                   f"{' ' if self.server.config.overwrite else 'NOT '}be overwritten."
             if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
+                run_action = True
                 pars_dict = None
                 if self.new_item_name_var.get():
                     pars_dict = {Constants.NEW_ITEM_NAME_KEY: self.new_item_name_var.get()}
@@ -244,6 +274,7 @@ class SubmitWidgets(tk.Frame):
                   f"The existing entities with the same name will " \
                   f"{' ' if self.server.config.overwrite else 'NOT '}be overwritten."
             if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
+                run_action = True
                 pars_dict = {Constants.NEW_ITEM_NAME_KEY: self.new_item_name_var.get(),
                              Constants.PROJECT_IDS_KEY: self.server.config.project_ids}
                 Migration(src_config=self.source.config, dst_config=self.server.config) \
@@ -257,11 +288,16 @@ class SubmitWidgets(tk.Frame):
                   f"{self.server.config.release_version}, and channel {channel_name}, release notes " \
                   f"{self.server.config.release_notes}?"
             if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
+                run_action = True
                 ReleaseDeployment.create_release_direct(
                     config=self.server.config, release_version=self.server.config.release_version,
                     project_name=project_name, channel_name=channel_name, notes=self.server.config.release_notes)
         else:
             print("not a valid action")
+        if run_action:
+            messagebox.showinfo(
+                title="Done!",
+                message=f"{self.server.config.action} ({ACTIONS_DICT.get(self.server.config.action)}) is done!")
 
     def start_run(self):
         threading.Thread(target=self.run_thread).start()

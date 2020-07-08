@@ -1,4 +1,4 @@
-from octopus_python_client.item_types import Constants
+from octopus_python_client.constants import Constants
 
 
 class Actions:

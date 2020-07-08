@@ -17,7 +17,7 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     comma_sign, cloned_from_project_id, item_type_runbook_processes, item_type_project_triggers, file_extension_key, \
     feed_id_key
 from octopus_python_client.config import Config
-from octopus_python_client.item_types import Constants
+from octopus_python_client.constants import Constants
 from octopus_python_client.utilities.helper import find_item, save_file, find_matched_sub_list, log_raise_value_error
 from octopus_python_client.utilities.send_requests_to_octopus import login_payload_user_name_key, \
     login_payload_password_key
@@ -243,8 +243,10 @@ class Migration:
         file_name = Common.construct_package_name(package_dict=src_package_copy_dict)
         dst_package = self._dst_common.post_package(file_name=file_name, content=content)
         if isinstance(dst_package, dict) and dst_package.get(id_key):
+            self._dst_common.log_info_print(msg=f"the destination package {file_name} was created or overwritten")
             self._src_id_vs_dst_id_dict[src_package_copy_dict.get(id_key)] = dst_package.get(id_key)
         else:
+            self._dst_common.log_info_print(msg=f"the destination package {file_name} existed and was skipped")
             self._src_id_vs_dst_id_dict[src_package_copy_dict.get(id_key)] = src_package_copy_dict.get(id_key)
         return dst_package
 
@@ -265,6 +267,7 @@ class Migration:
             else:
                 self._dst_common.log_info_print(
                     msg=f"cloning the latest version of {item_type_packages} {src_package_dict.get(id_key)}...")
+                src_package_copy_dict[id_key] = src_package_dict.get(id_key)
                 return self._clone_single_package(src_package_copy_dict=src_package_copy_dict)
         except Exception as err:
             self._dst_common.log_error_print(
@@ -794,6 +797,7 @@ class Migration:
                                                                  item_type=item_type_migration)
         self._dst_common.log_info_print(local_logger=self.logger, msg=f"writing item id map to {local_file}")
         save_file(file_path_name=local_file, content=self._src_id_vs_dst_id_dict)
+        self._dst_common.log_info_print(local_logger=self.logger, msg=f"***** data migration/clone is DONE! *****")
 
     def clone_space(self, item_types_comma_delimited=None):
         if item_types_comma_delimited:

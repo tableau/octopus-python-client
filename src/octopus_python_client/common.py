@@ -1065,8 +1065,10 @@ class Common:
     def post_package(self, file_name, content):
         self.logger.info(f"post package {file_name} to space {self.config.space_id} on server {self.config.endpoint}")
         if self.config.overwrite:
+            self.log_info_print(msg=f"overwriting the existing package {file_name} if it exists")
             address = f"{item_type_packages}/{package_raw}?overwriteMode=OverwriteExisting"
         else:
+            self.log_info_print(msg=f"skipping the existing package {file_name} if it exists")
             address = f"{item_type_packages}/{package_raw}?overwriteMode=IgnoreIfExists"
         return self.request_octopus_item(address=address, operation=operation_post_file,
                                          files={file_key: (file_name, content)})

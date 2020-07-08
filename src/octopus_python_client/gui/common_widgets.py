@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 class CommonWidgets:
     COMBOBOX_VALUES_KEY = "values"
+    HEIGHT_7 = 7
     READ_ONLY = "readonly"
     ROW_0 = 0
     ROW_1 = 1
@@ -30,7 +31,8 @@ class CommonWidgets:
     @staticmethod
     def set_radio_names_frame(parent, list_names: list, default_name: str = None, title="Select one: "):
         names_frame = tk.Frame(parent)
-        tk.Label(names_frame, text=title, bd=2).grid(row=CommonWidgets.ROW_0, sticky=tk.W)
+        tk.Label(names_frame, text=title, bd=2) \
+            .grid(row=CommonWidgets.ROW_0, columnspan=CommonWidgets.ROW_SIZE, sticky=tk.W)
         name_var = tk.StringVar()
         list_names_copy = copy.deepcopy(list_names)
         list_names_copy.sort()
@@ -50,7 +52,8 @@ class CommonWidgets:
     @staticmethod
     def set_radio_items_frame(parent, list_items: list, default_id: str = None, title="Select one: "):
         items_frame = tk.Frame(parent)
-        tk.Label(items_frame, text=title, bd=2).grid(row=CommonWidgets.ROW_0, sticky=tk.W)
+        tk.Label(items_frame, text=title, bd=2) \
+            .grid(row=CommonWidgets.ROW_0, columnspan=CommonWidgets.ROW_SIZE, sticky=tk.W)
         id_var = tk.StringVar()
         list_items_copy = copy.deepcopy(list_items)
         list_items_copy.sort(key=lambda one_item: one_item.get(name_key).lower())

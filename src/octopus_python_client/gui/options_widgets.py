@@ -3,7 +3,7 @@ from tkinter import messagebox
 
 from octopus_python_client.actions import ACTIONS_DICT, Actions
 from octopus_python_client.common import Common, inside_space_clone_types, item_type_projects, id_key, \
-    project_id_key
+    project_id_key, inside_space_download_types
 from octopus_python_client.gui.common_widgets import CommonWidgets
 
 
@@ -19,7 +19,7 @@ class OptionsWidgets(tk.Frame):
         self.submit_button = submit_button
 
         self.project_id_var = None
-        self.project_ids_var = None
+        self.project_ids_var_dict = None
         self.source_project_id_var = None
         self.type_var = None
         self.types_var_dict = None
@@ -32,13 +32,21 @@ class OptionsWidgets(tk.Frame):
         if self.server.config.action == Actions.ACTION_CLONE_SPACE:
             self.types_var_dict = CommonWidgets.set_check_names_frame(
                 self, list_names=inside_space_clone_types, default_names=self.server.config.types,
-                title="Select types:")
+                title="Select data types:")
+
+        elif self.server.config.action == Actions.ACTION_GET_SPACES:
+            self.types_var_dict = CommonWidgets.set_check_names_frame(
+                self, list_names=inside_space_download_types, default_names=self.server.config.types,
+                title="Select data types:")
+
         elif self.server.config.action == Actions.ACTION_CLONE_SPACE_ITEM:
             self.type_var = CommonWidgets.set_radio_names_frame(
                 parent=self, list_names=inside_space_clone_types, default_name=self.server.config.type,
                 title="Select type: ")
+
         elif self.server.config.action == Actions.ACTION_CLONE_PROJECT_RELATED:
             self.set_clone_project_related()
+
         elif self.server.config.action == Actions.ACTION_CREATE_RELEASE \
                 or self.server.config.action == Actions.ACTION_CREATE_DEPLOYMENT:
             projects_list = self.server.get_list_from_one_type(item_type=item_type_projects)
@@ -66,25 +74,24 @@ class OptionsWidgets(tk.Frame):
             title=f"Select a source project having {self.server.config.type}: ")
         CommonWidgets.directional_separator(parent=self, title=self.server.config.action)
         projects_list = self.server.get_list_from_one_type(item_type=item_type_projects)
-        self.project_ids_var = CommonWidgets.set_check_items_frame(
+        self.project_ids_var_dict = CommonWidgets.set_check_items_frame(
             parent=self, items_list=projects_list, default_ids=self.server.config.project_ids,
             title=f"Select the destination projects to be copied with {self.server.config.type}: ")
 
     def process_config(self):
         if self.types_var_dict:
-            self.server.config.types = []
-            for item_type in inside_space_clone_types:
-                if self.types_var_dict.get(item_type).get() == CommonWidgets.SELECTED:
-                    self.server.config.types.append(item_type)
+            self.server.config.types = [item_type for item_type, item_type_var in self.types_var_dict.items()
+                                        if item_type_var.get() == CommonWidgets.SELECTED]
         if self.type_var and self.type_var.get():
             self.server.config.type = self.type_var.get()
         if self.project_id_var and self.project_id_var.get():
             self.server.config.project_id = self.project_id_var.get()
         if self.source_project_id_var and self.source_project_id_var.get():
             self.source.config.project_id = self.source_project_id_var.get()
-        if self.project_ids_var:
-            self.server.config.project_ids = [project_id for project_id, project_id_var in self.project_ids_var.items()
-                                              if project_id_var.get() == CommonWidgets.SELECTED]
+        if self.project_ids_var_dict:
+            self.server.config.project_ids = \
+                [project_id for project_id, project_id_var in self.project_ids_var_dict.items()
+                 if project_id_var.get() == CommonWidgets.SELECTED]
         self.source.config.save_config()
         self.server.config.save_config()
         return True

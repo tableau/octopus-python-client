@@ -27,6 +27,7 @@ class BaseConfig:
         self.is_source_server = is_source_server
         self.item_id = ""
         self.item_name = ""
+        self.local_data = False
         self.password = ""
         self.pem = False
         self.project_id = ""
@@ -41,7 +42,6 @@ class Config(BaseConfig):
     CONFIGURATIONS_FOLDER = "configurations"
     DEFAULT_CONFIGURATION_FILE_NAME = "configuration.json"
     USE_CURRENT_DATA_PATH = "current"
-    LOCAL_DATA_KEY = "local_data"
     LOGGER = logging.getLogger("Config")
     SOURCE_SERVER_JSON = "source_server.json"
 
@@ -51,7 +51,6 @@ class Config(BaseConfig):
         self.action = Actions.ACTION_GET_SPACES
         self.channel_id = ""
         self.deployment_notes = ""
-        self.local_data = False
         self.no_stdout = False
         self.overwrite = False
         self.package_history = False
@@ -60,6 +59,7 @@ class Config(BaseConfig):
         self.project_ids = []
         self.release_notes = ""
         self.release_version = ""
+        self.space_ids = []
         self.tenant_id = ""
         self.type = ""
         self.types = []
@@ -85,7 +85,6 @@ class Config(BaseConfig):
         if self.is_source_server:
             self._base_config_dict.update(
                 (k, self.__dict__[k]) for k in self._base_config_dict.keys() & self.__dict__.keys())
-            self._base_config_dict[Config.LOCAL_DATA_KEY] = self.local_data
             save_file(file_path_name=self.config_file, content=self._base_config_dict)
         else:
             config_dict = copy.deepcopy(self.__dict__)

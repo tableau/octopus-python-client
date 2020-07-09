@@ -67,7 +67,8 @@ class SubmitWidgets(tk.Frame):
                 item_type=self.server.config.type, condition_key=project_id_key,
                 condition_id=self.source.config.project_id)
             self.set_clone_item_frame(items_list=items_list)
-        elif self.server.config.action == Actions.ACTION_CLONE_SPACE:
+        elif self.server.config.action == Actions.ACTION_CLONE_SPACE \
+                or self.server.config.action == Actions.ACTION_GET_SPACES:
             if item_type_packages in self.server.config.types:
                 self.set_package_history_widget()
             self.set_overwrite_widget()
@@ -266,14 +267,14 @@ class SubmitWidgets(tk.Frame):
     def set_overwrite_widget(self):
         self.overwrite_var = tk.StringVar()
         tk.Checkbutton(self, text="Overwrite the existing entities of the same names, including the referenced entities"
-                                  " (will not overwrite if unchecked)", variable=self.overwrite_var).grid(sticky=tk.W)
+                                  " (will skip if unchecked)", variable=self.overwrite_var).grid(sticky=tk.W)
         self.overwrite_var.set(CommonWidgets.SELECTED if self.server.config.overwrite else CommonWidgets.UNSELECTED)
 
     def set_package_history_widget(self):
         self.package_history_var = tk.StringVar()
         tk.Checkbutton(
-            self, text="Clone all historical versions of the packages (clone only the latest version if unchecked)",
-            variable=self.package_history_var).grid(sticky=tk.W)
+            self, text="Clone/download all historical versions of the packages (clone/download only the latest version "
+                       "if unchecked)", variable=self.package_history_var).grid(sticky=tk.W)
         self.package_history_var.set(
             CommonWidgets.SELECTED if self.server.config.package_history else CommonWidgets.UNSELECTED)
 
@@ -299,12 +300,15 @@ class SubmitWidgets(tk.Frame):
 
     def run_thread(self):
         run_action = False
+        historical_package_msg = f" The historical versions of packages will " \
+                                 f"{'' if self.server.config.package_history else 'NOT '}be downloaded. "
         if self.server.config.action == Actions.ACTION_CLONE_SPACE:
             msg = f"Are you sure you want to clone types {self.server.config.types} from " \
                   f"{self.source.config.space_id} on server {self.source.config.endpoint} to " \
                   f"{self.server.config.space_id} on server {self.server.config.endpoint}? " \
                   f"The existing entities with the same name will " \
                   f"{' ' if self.server.config.overwrite else 'NOT '}be overwritten."
+            msg += (historical_package_msg if item_type_packages in self.server.config.types else "")
             if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
                 run_action = True
                 Migration(src_config=self.source.config, dst_config=self.server.config).clone_space_types()
@@ -317,6 +321,7 @@ class SubmitWidgets(tk.Frame):
                   f"{self.new_item_name_var.get()} in {self.server.config.space_id} on server " \
                   f"{self.server.config.endpoint}? The existing entities with the same name will " \
                   f"{' ' if self.server.config.overwrite else 'NOT '}be overwritten."
+            msg += (historical_package_msg if item_type_packages == self.server.config.type else "")
             if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
                 run_action = True
                 pars_dict = None
@@ -367,6 +372,18 @@ class SubmitWidgets(tk.Frame):
                 ReleaseDeployment.create_deployment_direct(
                     config=self.server.config, environment_name=env_name, tenant_name=tenant_name,
                     release_id=self.release_id, project_name=project_name, comments=self.deployment_notes_var.get())
+
+        elif self.server.config.action == Actions.ACTION_GET_SPACES:
+            spaces_ids = ",".join(self.server.config.space_ids)
+            types = ",".join(self.server.config.types)
+            msg = f"Are you sure you want to download types {types} from spaces {spaces_ids} on server " \
+                  f"{self.server.config.endpoint}? The existing local entities files will " \
+                  f"{'' if self.server.config.overwrite else 'NOT '}be overwritten."
+            msg += (historical_package_msg if item_type_packages in self.server.config.types else "")
+            if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
+                run_action = True
+                self.server.get_spaces_save(space_id_or_name_comma_delimited=spaces_ids,
+                                            item_types_comma_delimited=types)
 
         else:
             print("not a valid action")

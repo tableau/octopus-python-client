@@ -127,7 +127,7 @@ def compare_dicts(dict1, dict2):
     return dict1 == dict2
 
 
-def compare_overwrite(data=None, local_file=None):
+def compare_overwrite(data, local_file: str, overwrite=False):
     logger.info(f"comparing and save local file {local_file}...")
     if not Path(local_file).is_file():
         logger.info(f"{local_file} does not exist, so just write it")
@@ -149,13 +149,12 @@ def compare_overwrite(data=None, local_file=None):
     else:
         is_sync = str(local) == str(data)
     if not is_sync:
-        overwrite = input('The remote data is different from your local data. ' +
-                          f'Do you want to overwrite your local file {local_file} [Y/n]: ')
-        if overwrite == 'Y':
-            logger.info(f'Writing your local file {local_file} with the remote data...')
+        logger.info(f"Data is different from your local file {local_file}")
+        if overwrite:
+            logger.info(f"Overwriting your local file {local_file} with the data...")
             save_file(file_path_name=local_file, content=data)
         else:
-            logger.info('No overwritten happens')
+            logger.info("Overwriting is disabled")
 
 
 def load_file(file_path_name=None):

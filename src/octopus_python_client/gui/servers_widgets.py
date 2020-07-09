@@ -18,26 +18,26 @@ class ServersWidgets(tk.Frame):
         self.next_button = next_button
         self.submit_button = submit_button
 
-        self.local_data = None
-        self.source_variables = None
-        self.target_variables = None
+        self.local_data_var = None
+        self.source_var_dict = None
+        self.target_var_dict = None
 
         self.update_step()
 
     def update_step(self):
-        self.target_variables = {}
-        self.source_variables = {}
+        self.target_var_dict = {}
+        self.source_var_dict = {}
         tk.Label(self, text=f"{self.server.config.action} ({ACTIONS_DICT.get(self.server.config.action)})",
                  bd=2, relief="groove").grid(sticky=tk.W)
         if self.server.config.action in MIGRATION_LIST:
-            self.source_variables = self.set_server_frame(config=self.source.config)
+            self.source_var_dict = self.set_server_frame(config=self.source.config)
             # 'The source server data is loaded from local files, not directly from server'
-            self.local_data = tk.StringVar()
+            self.local_data_var = tk.StringVar()
             tk.Checkbutton(self, text="The source Octopus data is loaded from local files, not from Octopus server",
-                           variable=self.local_data).grid(sticky=tk.EW)
-            self.local_data.set(self.source.config.local_data)
+                           variable=self.local_data_var, state=tk.NORMAL).grid(sticky=tk.EW)
+            self.local_data_var.set(self.source.config.local_data)
             CommonWidgets.directional_separator(parent=self, title=self.server.config.action)
-        self.target_variables = self.set_server_frame(config=self.server.config)
+        self.target_var_dict = self.set_server_frame(config=self.server.config)
 
     @staticmethod
     def file_dialog_ask_dir(tk_var: tk.StringVar):
@@ -105,17 +105,17 @@ class ServersWidgets(tk.Frame):
         return True
 
     def process_config(self):
-        if self.source_variables:
+        if self.source_var_dict:
             source_config_dict = {}
-            for key, variable in self.source_variables.items():
+            for key, variable in self.source_var_dict.items():
                 source_config_dict[key] = variable.get()
             self.source.config.__dict__.update(source_config_dict)
-            self.source.config.local_data = True if self.local_data.get() == CommonWidgets.SELECTED else False
+            self.source.config.local_data = True if self.local_data_var.get() == CommonWidgets.SELECTED else False
             if not ServersWidgets.verify_spaces(server=self.source):
                 return False
             self.source.config.save_config()
         target_config_dict = {}
-        for key, variable in self.target_variables.items():
+        for key, variable in self.target_var_dict.items():
             target_config_dict[key] = variable.get()
         self.server.config.__dict__.update(target_config_dict)
         if not ServersWidgets.verify_spaces(server=self.server):

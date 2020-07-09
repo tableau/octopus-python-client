@@ -45,7 +45,8 @@ ACTIONS_DICT = {
     Actions.ACTION_CLONE_PROJECT_RELATED: f"clone project related items {Constants.PROJECT_RELATED_TYPES} from one "
                                           f"project to other projects",
     Actions.ACTION_CREATE_RELEASE: "create a new release for a project",
-    Actions.ACTION_CREATE_DEPLOYMENT: "create a new deployment for a release of a project"
+    Actions.ACTION_CREATE_DEPLOYMENT: "create a new deployment for a release of a project",
+    Actions.ACTION_GET_SPACES: "download data and configurations from one or more Octopus spaces to local files"
 }
 
 MIGRATION_LIST = [Actions.ACTION_CLONE_PROJECT_RELATED, Actions.ACTION_CLONE_SPACE_ITEM, Actions.ACTION_CLONE_SPACE,

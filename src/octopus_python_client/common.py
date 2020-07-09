@@ -323,10 +323,10 @@ class Common:
             a_dict.pop('LastModifiedOn', None)
             a_dict.pop('LastModifiedBy', None)
 
-    def always_overwrite_or_compare_overwrite(self, local_file, data, overwrite=False):
+    def always_overwrite_or_compare_overwrite(self, local_file, data):
         if not local_file or not str(data):
             raise ValueError("local_file and data must not be empty")
-        if self.config.overwrite or overwrite:
+        if self.config.overwrite:
             save_file(file_path_name=local_file, content=data)
             self.logger.info(f'A new local file {local_file} was written with the data')
         else:
@@ -396,12 +396,12 @@ class Common:
         return is_same, local_item, remote_item
 
     # compare in memory all items with the local all items and overwrite if user wants
-    def compare_overwrite_multiple_items(self, items, item_type, overwrite=False):
+    def compare_overwrite_multiple_items(self, items, item_type):
         if not item_type:
             raise ValueError('item_type must not be empty')
         local_all_items_file = self.get_local_all_items_file(item_type=item_type)
         self.logger.info('compare and write: ' + local_all_items_file)
-        self.always_overwrite_or_compare_overwrite(local_file=local_all_items_file, data=items, overwrite=overwrite)
+        self.always_overwrite_or_compare_overwrite(local_file=local_all_items_file, data=items)
 
     # get all items for an item_type by call Octopus API /api/{space_id}/item_type with 'get' operation
     # {space_id} is optional
@@ -443,12 +443,12 @@ class Common:
             save_file(file_path_name=ext_file, content=ext_items_dict)
 
     # then save the all items into a local file (warning for overwrite)
-    def get_one_type_save(self, item_type, overwrite=False):
+    def get_one_type_save(self, item_type):
         if not item_type:
             raise ValueError("item_type must not be empty")
         self.log_info_print(msg=f"downloading {item_type} in space {self.config.space_id}...")
         all_items = self.get_one_type_ignore_error(item_type=item_type)
-        self.compare_overwrite_multiple_items(items=all_items, item_type=item_type, overwrite=overwrite)
+        self.compare_overwrite_multiple_items(items=all_items, item_type=item_type)
         if item_type == item_type_users:
             list_users = self.get_list_items_from_all_items(all_items=all_items)
             user_ids = [user.get(id_key) for user in list_users]
@@ -529,14 +529,9 @@ class Common:
                 list_item_types = inside_space_download_types
             else:
                 list_item_types = inside_space_download_types + outer_space_download_types
-        if self.config.overwrite:
-            self.logger.info(f"===== You are downloading {list_item_types} from space {self.config.space_id}... ===== ")
-        else:
-            self.config.overwrite = \
-                input(f"***** You are downloading {list_item_types} from space {self.config.space_id}; "
-                      f"Some entities may already be downloaded locally; "
-                      f"Do you want to overwrite all local existing entities? "
-                      f"If no, you will be asked to overwrite or not for each type respectively. [Y/n]: ") == 'Y'
+        self.log_info_print(f"===== You are downloading {list_item_types} from space {self.config.space_id}... ===== ")
+        if not self.config.overwrite:
+            self.log_info_print(msg=f"if the data has been downloaded to the local files, they may be skipped.")
         for item_type in list_item_types:
             self.get_one_type_save(item_type=item_type)
 
@@ -555,14 +550,9 @@ class Common:
         # if user does not specify the spaces, we also download the outer space for user
         if not space_id_or_name_comma_delimited:
             list_space_ids_sorted = [None] + list_space_ids_sorted
-        if self.config.overwrite:
-            self.logger.info(f"===== You are downloading spaces {list_space_ids_sorted}... =====")
-        else:
-            self.config.overwrite = \
-                input(f"===== You are downloading spaces {list_space_ids_sorted}; "
-                      f"Some entities may already be downloaded locally; "
-                      f"Do you want to overwrite all local existing entities? "
-                      f"If no, you will be asked to overwrite or not for each type respectively. [Y/n]: ") == 'Y'
+        self.log_info_print(f"===== You are downloading spaces {list_space_ids_sorted}... =====")
+        if not self.config.overwrite:
+            self.log_info_print(msg=f"if the data has been downloaded to the local files, they may be skipped.")
         for space_id in list_space_ids_sorted:
             self.config.space_id = space_id
             self.get_types_save(item_types_comma_delimited=item_types_comma_delimited)
@@ -734,7 +724,7 @@ class Common:
             self.logger.warning(f"the new item has no name, so the input item name {payload.get(name_key)} is used")
             item[name_key] = payload.get(name_key)
         local_item_file = self.get_local_single_item_file_from_item(item=item, item_type=item_type)
-        self.always_overwrite_or_compare_overwrite(local_file=local_item_file, data=item, overwrite=True)
+        save_file(file_path_name=local_item_file, content=item)
         return item
 
     # put a single item by call Octopus API /api/{space_id}/item_type/{id} with 'put' operation
@@ -753,16 +743,13 @@ class Common:
 
     # put a single item by call Octopus API /api/{space_id}/item_type/{id} with 'put' operation
     # then save the item locally
-    def put_single_item_save(self, item_type, payload, overwrite=False):
+    def put_single_item_save(self, item_type, payload):
         item_info = payload.get(name_key) if payload.get(name_key) else payload.get(id_key)
         self.logger.info(f"updating {item_type} {item_info} in {self.config.space_id} and saving to a local file...")
-        if self.config.overwrite or overwrite \
-                or input(f"Are you sure to update {item_type} {item_info} in {self.config.space_id} [Y/n]: ") == 'Y':
-            item = self.put_single_item(item_type=item_type, payload=payload)
-            local_item_file = self.get_local_single_item_file_from_item(item=item, item_type=item_type)
-            save_file(file_path_name=local_item_file, content=item)
-            return item
-        return payload
+        item = self.put_single_item(item_type=item_type, payload=payload)
+        local_item_file = self.get_local_single_item_file_from_item(item=item, item_type=item_type)
+        save_file(file_path_name=local_item_file, content=item)
+        return item
 
     # put a child-item by call Octopus API /api/{space_id}/child_type/{id} with 'put' operation
     # then save the item locally
@@ -905,10 +892,8 @@ class Common:
         if is_same:
             self.log_info_print(msg=remote_local_same_msg)
             return
-        if self.config.overwrite or input(
-                f"Are you sure you want to update {child_type} for {parent_name} [Y/n]: ") == 'Y':
-            child_item = self.put_single_item(item_type=child_type, payload=local_child_item)
-            save_file(file_path_name=local_child_file, content=child_item)
+        child_item = self.put_single_item(item_type=child_type, payload=local_child_item)
+        save_file(file_path_name=local_child_file, content=child_item)
 
     # clone a child-item of a parent-item from another parent-item
     def clone_child_item_from_another_parent_save(self, parent_name, base_parent_name, parent_type,
@@ -919,7 +904,7 @@ class Common:
                                               child_id_key=child_id_key, child_type=child_type)
         return self._clone_child_item_save(parent_name=parent_name, parent_type=parent_type, child_type=child_type,
                                            child_id_key=child_id_key, sub_item_key=sub_item_key,
-                                           base_child_item=base_child_item, overwrite=self.config.overwrite)
+                                           base_child_item=base_child_item)
 
     def clone_item_by_id_replace_sub_item_save(self, item_type, src_item, dst_item_id, sub_item_key):
         src_item_id = src_item.get(id_key)
@@ -927,21 +912,17 @@ class Common:
                          f"{dst_item_id} in {self.config.space_id}...")
         dst_item = self.get_or_delete_single_item_by_id(item_type=item_type, item_id=dst_item_id)
         dst_item[sub_item_key] = src_item.get(sub_item_key)
-        dst_item = self.put_single_item_save(item_type=item_type, payload=dst_item, overwrite=True)
+        dst_item = self.put_single_item_save(item_type=item_type, payload=dst_item)
         return dst_item
 
-    def _clone_child_item_save(self, parent_name, parent_type, child_type, child_id_key, sub_item_key, base_child_item,
-                               overwrite=False):
+    def _clone_child_item_save(self, parent_name, parent_type, child_type, child_id_key, sub_item_key, base_child_item):
         self.logger.info(f"Cloning child item {child_type} {base_child_item.get(id_key)} from memory to {parent_type} "
                          f"{parent_name} in {self.config.space_id}...")
-        if self.config.overwrite or overwrite or input(f"Are you sure you want to clone child item {child_type} "
-                                                       f"{base_child_item.get(id_key)} from memory to {parent_type} "
-                                                       f"{parent_name} in {self.config.space_id} [Y/n]: ") == 'Y':
-            dst_parent = self.get_single_item_by_name(item_type=parent_type, item_name=parent_name)
-            dst_child_id = dst_parent.get(child_id_key)
-            dst_child_item = self.clone_item_by_id_replace_sub_item_save(
-                item_type=child_type, src_item=base_child_item, dst_item_id=dst_child_id, sub_item_key=sub_item_key)
-            return dst_child_item
+        dst_parent = self.get_single_item_by_name(item_type=parent_type, item_name=parent_name)
+        dst_child_id = dst_parent.get(child_id_key)
+        dst_child_item = self.clone_item_by_id_replace_sub_item_save(
+            item_type=child_type, src_item=base_child_item, dst_item_id=dst_child_id, sub_item_key=sub_item_key)
+        return dst_child_item
 
     def merge_local_to_remote(self, source_item, target_item, child_id_key):
         self.log_info_print(item=[source_item, target_item], msg=f"merge local item to remote item by {child_id_key}")
@@ -1133,6 +1114,7 @@ class Common:
         url_suffix = space_url + address
         content, headers = call_octopus(operation=operation_get_file, config=self.config, url_suffix=url_suffix)
         ext = headers.get(content_type_key).split("/")[-1]
+        # TODO neither .svg nor .svg+xml can be posted to Octopus server. Error: Invalid image provided
         if "+" in ext:
             ext = ext.split("+")[0]
         return content, ext
@@ -1156,7 +1138,8 @@ class Common:
         write_binary_file(local_file=logo_file, content=content)
 
     def local_logo_file(self, item_type, item_id, ext):
-        return self.get_local_single_item_file(item_name=f"{item_id}_logo.{ext}", item_type=item_type, no_ext=True)
+        return self.get_local_single_item_file(
+            item_name=f"{item_id}_{item_type_logo}.{ext}", item_type=item_type, no_ext=True)
 
     def post_logo(self, item_type, item_id, file_name, content):
         self.log_info_print(f"post logo {file_name} to {item_type} {item_id}")

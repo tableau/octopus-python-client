@@ -140,18 +140,12 @@ class OctopusClient:
         elif args.pem:
             self._target_config.pem = args.pem
 
-        if args.overwrite:
-            self._target_config.overwrite = True
-        else:
-            self._target_config.overwrite = False
-        if args.no_stdout:
-            self._target_config.no_stdout = True
-        else:
-            self._target_config.no_stdout = False
-        if args.package_history:
-            self._target_config.package_history = True
-        else:
-            self._target_config.package_history = False
+        self._target_config.overwrite = args.overwrite
+        logger.info(f"self._target_config.overwrite: {self._target_config.overwrite}")
+        self._target_config.no_stdout = args.no_stdout
+        logger.info(f"self._target_config.no_stdout: {self._target_config.no_stdout}")
+        self._target_config.package_history = args.package_history
+        logger.info(f"self._target_config.package_history: {self._target_config.package_history}")
 
         if args.space_id_name:
             self._target_config.space_id = self._target_common.verify_space(space_id_name=args.space_id_name)
@@ -168,8 +162,8 @@ class OctopusClient:
         if args.action in MIGRATION_LIST:
             self._target_common.log_info_print(msg=f"===== Action: {args.action}; processing the source config =====")
 
-            if args.local_data:
-                self._source_config.local_data = True
+            self._source_config.local_data = args.local_data
+            logger.info(f"self._source_config.local_data: {self._source_config.local_data}")
             if args.source_endpoint:
                 self._source_config.endpoint = args.source_endpoint
             assert self._source_config.local_data or self._source_config.endpoint.endswith("/api/"), \

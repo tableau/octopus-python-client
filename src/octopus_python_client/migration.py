@@ -1,7 +1,8 @@
 import copy
+import glob
 import logging
+import os
 import re
-import sys
 from time import gmtime, strftime
 
 from octopus_python_client.common import name_key, tags_key, id_key, item_type_tag_sets, item_type_projects, Common, \
@@ -15,7 +16,7 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     item_id_prefix_to_type_dict, positive_integer_regex, team_id_key, outer_space_clone_types, item_type_users, \
     item_type_spaces, default_password, is_service_key, space_managers_teams, item_type_teams, package_id_key, \
     comma_sign, cloned_from_project_id, item_type_runbook_processes, item_type_project_triggers, file_extension_key, \
-    feed_id_key, item_types_with_logo
+    feed_id_key, item_types_with_logo, item_type_logo
 from octopus_python_client.config import Config
 from octopus_python_client.constants import Constants
 from octopus_python_client.utilities.helper import find_item, save_file, find_matched_sub_list, log_raise_value_error
@@ -245,41 +246,33 @@ class Migration:
         if isinstance(dst_package, dict) and dst_package.get(id_key):
             self._dst_common.log_info_print(msg=f"the destination package {file_name} was created or overwritten")
             self._src_id_vs_dst_id_dict[src_package_copy_dict.get(id_key)] = dst_package.get(id_key)
+            return dst_package
         else:
             self._dst_common.log_info_print(msg=f"the destination package {file_name} existed and was skipped")
             self._src_id_vs_dst_id_dict[src_package_copy_dict.get(id_key)] = src_package_copy_dict.get(id_key)
-        return dst_package
+            return src_package_copy_dict
 
     def _clone_package(self, src_package_copy_dict: dict, src_package_dict: dict):
-        try:
-            if self._dst_config.package_history:
-                self._dst_common.log_info_print(
-                    msg=f"cloning all versions of {item_type_packages} {src_package_dict.get(package_id_key)}...")
-                package_history_list = self._src_common.get_package_history_list(package_dict=src_package_dict)
-                package_history_list.reverse()
-                dst_package = {}
-                for package_dict in package_history_list:
-                    self._dst_common.log_info_print(msg=f"cloning {item_type_packages} {package_dict.get(id_key)}...")
-                    package_dict[file_extension_key] = src_package_copy_dict.get(file_extension_key)
-                    package_dict[feed_id_key] = src_package_copy_dict.get(feed_id_key)
-                    dst_package = self._clone_single_package(src_package_copy_dict=package_dict)
-                return dst_package
-            else:
-                self._dst_common.log_info_print(
-                    msg=f"cloning the latest version of {item_type_packages} {src_package_dict.get(id_key)}...")
-                src_package_copy_dict[id_key] = src_package_dict.get(id_key)
-                return self._clone_single_package(src_package_copy_dict=src_package_copy_dict)
-        except Exception as err:
-            self._dst_common.log_error_print(
-                local_logger=self.logger, item=src_package_copy_dict,
-                msg=f"Failed to clone package {src_package_dict.get(id_key)}; is history packages enabled? "
-                    f"{self._dst_config.package_history}; error: {err}")
-            return {}
+        # TODO fix clone historical packages from local_data
+        if self._dst_config.package_history and not self._src_config.local_data:
+            self._dst_common.log_info_print(
+                msg=f"cloning all versions of {item_type_packages} {src_package_dict.get(package_id_key)}...")
+            package_history_list = self._src_common.get_package_history_list(package_dict=src_package_dict)
+            package_history_list.reverse()
+            dst_package = {}
+            for package_dict in package_history_list:
+                self._dst_common.log_info_print(msg=f"cloning {item_type_packages} {package_dict.get(id_key)}...")
+                package_dict[file_extension_key] = src_package_copy_dict.get(file_extension_key)
+                package_dict[feed_id_key] = src_package_copy_dict.get(feed_id_key)
+                dst_package = self._clone_single_package(src_package_copy_dict=package_dict)
+            return dst_package
+        else:
+            self._dst_common.log_info_print(
+                msg=f"cloning the latest version of {item_type_packages} {src_package_dict.get(id_key)}...")
+            src_package_copy_dict[id_key] = src_package_dict.get(id_key)
+            return self._clone_single_package(src_package_copy_dict=src_package_copy_dict)
 
     def _put_post_item_to_space(self, item_type, src_item_copy, src_item):
-        if item_type == item_type_packages:
-            dst_item = self._clone_package(src_package_copy_dict=src_item_copy, src_package_dict=src_item)
-            return dst_item, not isinstance(dst_item, dict)
         src_id_value = src_item.get(id_key)
         src_item_name = src_item.get(name_key)
         self.logger.info(
@@ -379,6 +372,17 @@ class Migration:
 
         self._replace_ids(dict_list=src_item_copy)
 
+        if item_type == item_type_packages:
+            try:
+                dst_item = self._clone_package(src_package_copy_dict=src_item_copy, src_package_dict=src_item)
+            except Exception as err:
+                self._dst_common.log_error_print(
+                    local_logger=self.logger, item=src_item_copy,
+                    msg=f"Failed to clone package {src_item.get(id_key)}; is history packages enabled? "
+                        f"{self._dst_config.package_history}; error: {err}")
+                dst_item = {}
+            return dst_item.get(id_key)
+
         dst_item, dst_item_exist = self._put_post_item_to_space(item_type=item_type, src_item_copy=src_item_copy,
                                                                 src_item=src_item)
         if not dst_item:
@@ -412,18 +416,23 @@ class Migration:
         self._dst_common.log_info_print(
             local_logger=self.logger, msg=f"cloning logo for type {item_type} from {src_id} to {dst_id}")
         if self._src_config.local_data:
-            # TODO search for the local file and load it
-            ext = "*"
-            local_logo_file = self._src_common.local_logo_file(item_type=item_type, item_id=src_id, ext=ext)
-            self._dst_common.log_info_print(local_logger=self.logger, msg=f"loading logo file from {local_logo_file}")
-            content = open(local_logo_file, 'rb')
+            pattern = self._src_common.local_logo_file(item_type=item_type, item_id=src_id, ext="*")
+            local_logo_files = glob.glob(pattern)
+            if not local_logo_files or len(local_logo_files) == 0:
+                self._dst_common.log_info_print(
+                    local_logger=self.logger, msg=f"no logo file found for {item_type} {src_id}")
+                return
+            self._dst_common.log_info_print(local_logger=self.logger, msg=f"loading logo file {local_logo_files[0]}")
+            content = open(local_logo_files[0], 'rb')
+            file_name = os.path.basename(local_logo_files[0])
         else:
             content, ext = self._src_common.get_logo(item_type=item_type, item_id=src_id)
-        file_name = f"logo.{ext}"
+            file_name = f"{src_id}_{item_type_logo}.{ext}"
+            self._dst_common.log_info_print(local_logger=self.logger, msg=f"named in-memory logo image as {file_name}")
         dst_response = self._dst_common.post_logo(
             item_type=item_type, item_id=dst_id, file_name=file_name, content=content)
-        self._dst_common.log_info_print(local_logger=self.logger, item=dst_response,
-                                        msg=f"logo was cloned successfully as {file_name}")
+        self._dst_common.log_info_print(
+            local_logger=self.logger, item=dst_response, msg=f"logo was cloned successfully")
 
     def _clone_type_to_space(self, item_type):
         if not item_type:
@@ -736,16 +745,15 @@ class Migration:
                 msg=f"Downloading {self._all_types} from space {self._src_config.space_id}...")
         actual_src_space_id = None
         for item_type in self._all_types:
-            self._dst_common.log_info_print(local_logger=self.logger,
-                                            msg=f"loading type {item_type} from space {self._src_config.space_id}")
-            # for cloning space from another Octopus server
             if self._src_config.local_data:
-                self.logger.info(
-                    f"Loading {item_type} in source local source {self._src_config.space_id} from the local file...")
+                self._dst_common.log_info_print(
+                    local_logger=self.logger,
+                    msg=f"Loading {item_type} in {self._src_config.space_id} from the local file...")
                 src_list_items = self._src_common.get_list_items_from_file(item_type=item_type)
-            # for cloning space to space on the same Octopus server
             else:
-                self.logger.info(f"Loading {item_type} from source space {self._src_config.space_id}...")
+                self._dst_common.log_info_print(
+                    local_logger=self.logger,
+                    msg=f"Loading {item_type} from source space {self._src_config.space_id}...")
                 src_list_items = self._src_common.get_list_from_one_type(item_type=item_type)
             selected_src_list_items = []
             for src_item in src_list_items:
@@ -895,7 +903,7 @@ class Migration:
 
         if input(f"Are you sure you want to clone server to server? If yes, your permission on the destination "
                  f"server could be overwritten and revoked (default password is {default_password} [Y/n]: ") != 'Y':
-            sys.exit()
+            return
 
         if not self._dst_config.overwrite:
             self._dst_config.overwrite = input(

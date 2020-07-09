@@ -62,11 +62,9 @@ class Projects:
                     raise ValueError(f"Excluded project {excluded_project_name} does not match any project in "
                                      f"{self.config.space_id}")
 
-        self.common.log_info_print(
-            local_logger=self.logger,
-            msg=f"You are deleting all projects inside project groups {list_project_group_names} in "
-                f"{self.config.space_id}) excluding projects {list_excluded_project_names}.")
-        if not self.config.overwrite and input("Please confirm: [Y/n]: ") != 'Y':
+        if not self.config.overwrite and input(
+                f"Are you sure to delete all projects inside project groups {list_project_group_names} in "
+                f"{self.config.space_id}) excluding projects {list_excluded_project_names}? [Y/n]: ") != 'Y':
             return
 
         self.config.overwrite = True

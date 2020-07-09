@@ -8,7 +8,7 @@ from octopus_python_client.config import Config
 from octopus_python_client.utilities.helper import compare_overwrite, find_item, load_file, save_file, \
     is_local_same_as_remote2, write_binary_file
 from octopus_python_client.utilities.send_requests_to_octopus import call_octopus, operation_get, operation_post, \
-    operation_put, operation_delete, operation_get_file, operation_post_file
+    operation_put, operation_delete, operation_get_file, operation_post_file, content_type_key
 
 # constants
 all_underscore = "all_"
@@ -123,6 +123,7 @@ item_type_home = "home"
 item_type_interruptions = "interruptions"
 item_type_library_variable_sets = "libraryvariablesets"
 item_type_life_cycles = "lifecycles"
+item_type_logo = "logo"
 item_type_machine_policies = "machinepolicies"
 item_type_machine_roles = "machineroles"
 item_type_machines = "machines"
@@ -236,6 +237,9 @@ outer_space_download_types = \
 item_type_sub_item_map = {item_type_tag_sets: (tags_key, canonical_tag_name_key)}
 item_id_prefix_to_type_dict = {environments_prefix: item_type_environments, tenants_prefix: item_type_tenants}
 
+# the item types with logo
+item_types_with_logo = {item_type_action_templates, item_type_projects, item_type_tenants}
+
 
 class Common:
     def __init__(self, config: Config, logger: logging.Logger = None):
@@ -295,7 +299,7 @@ class Common:
 
     def get_list_spaces(self):
         try:
-            all_spaces = call_octopus(config=self.config, url_suffix=item_type_spaces)
+            all_spaces, headers = call_octopus(config=self.config, url_suffix=item_type_spaces)
             return self.get_list_items_from_all_items(all_items=all_spaces)
         except Exception as err:
             self.log_error_print(msg=f"Cannot get the spaces for {self.config.endpoint}; {err}")
@@ -409,14 +413,15 @@ class Common:
         try:
             if item_type == item_type_home:
                 self.logger.info(f"getting space {self.config.space_id} home page")
-                return call_octopus(config=self.config, url_suffix=space_url)
-            if item_type in inside_space_only_all_types:
+                all_items, headers = call_octopus(config=self.config, url_suffix=space_url)
+            elif item_type in inside_space_only_all_types:
                 self.logger.info(f"{item_type} can only be downloaded by {slash_all}")
                 url_suffix = space_url + item_type + slash_all
-                return call_octopus(config=self.config, url_suffix=url_suffix)
+                all_items, headers = call_octopus(config=self.config, url_suffix=url_suffix)
             else:
                 url_suffix = space_url + item_type + "?" + url_all_pages
-                return call_octopus(config=self.config, url_suffix=url_suffix)
+                all_items, headers = call_octopus(config=self.config, url_suffix=url_suffix)
+            return all_items
         except Exception as err:
             # TODO bug https://help.octopus.com/t/504-gateway-time-out-on-getting-all-variables/24732
             self.log_error_print(msg=err)
@@ -462,6 +467,10 @@ class Common:
                 else:
                     self.log_info_print(msg=f"downloading the latest version of {package.get(id_key)}")
                     self.save_package(package_dict=package)
+        if item_type in item_types_with_logo:
+            items_list = self.get_list_items_from_all_items(all_items=all_items)
+            for item in items_list:
+                self.save_logo(item_type=item_type, item_id=item.get(id_key))
         return all_items
 
     def delete_types(self, item_types_comma_delimited=None):
@@ -678,6 +687,8 @@ class Common:
             self.get_tenant_variables_save(tenant_id=item.get(id_key))
         elif item_type == item_type_packages:
             self.save_package(package_dict=item)
+        if item_type in item_types_with_logo:
+            self.save_logo(item_type=item_type, item_id=item.get(id_key))
         return item
 
     # a single item from Octopus server for the item which cannot be searched by the item_name (like deployment process)
@@ -688,7 +699,8 @@ class Common:
             raise ValueError("item_type and item_id must not be empty")
         space_url = self.config.space_id + slash_sign if self.config.space_id else ""
         url_suffix = space_url + item_type + slash_sign + item_id
-        return call_octopus(operation=action, config=self.config, url_suffix=url_suffix)
+        item, headers = call_octopus(operation=action, config=self.config, url_suffix=url_suffix)
+        return item
 
     def get_list_items_from_all_items(self, all_items):
         self.logger.info(f"getting the list of items from the payload")
@@ -707,7 +719,8 @@ class Common:
             raise ValueError("item_type and playload must not be empty")
         space_url = self.config.space_id + slash_sign if self.config.space_id else ""
         url_suffix = space_url + item_type
-        item = call_octopus(operation=operation_post, payload=payload, config=self.config, url_suffix=url_suffix)
+        item, headers = call_octopus(operation=operation_post, payload=payload, config=self.config,
+                                     url_suffix=url_suffix)
         Common.pop_last_modified(item)
         return item
 
@@ -732,7 +745,8 @@ class Common:
         space_url = self.config.space_id + slash_sign if self.config.space_id else ""
         # some type has no id like http://server/api/Spaces-1/dashboardconfiguration
         url_suffix = space_url + item_type + (slash_sign + payload.get(id_key) if payload.get(id_key) else "")
-        item = call_octopus(operation=operation_put, payload=payload, config=self.config, url_suffix=url_suffix)
+        item, headers = call_octopus(operation=operation_put, payload=payload, config=self.config,
+                                     url_suffix=url_suffix)
         Common.pop_last_modified(item)
         self.logger.info(f"{item_type} {id_key} is " + item[id_key])
         return item
@@ -971,8 +985,8 @@ class Common:
     def request_octopus_item(self, address, payload=None, operation=operation_get, files=None):
         space_url = self.config.space_id + slash_sign if self.config.space_id else ""
         url_suffix = space_url + address
-        item = call_octopus(operation=operation, payload=payload, config=self.config, url_suffix=url_suffix,
-                            files=files)
+        item, headers = call_octopus(operation=operation, payload=payload, config=self.config, url_suffix=url_suffix,
+                                     files=files)
         Common.pop_last_modified(item)
         return item
 
@@ -1113,3 +1127,44 @@ class Common:
         self.logger.info(f"Gets all of the information necessary for creating or editing a deployment for {release_id}")
         address = f"{item_type_releases}/{release_id}/{item_type_deployments}/template"
         return self.request_octopus_item(address=address)
+
+    def get_octopus_file(self, address):
+        space_url = self.config.space_id + slash_sign if self.config.space_id else ""
+        url_suffix = space_url + address
+        content, headers = call_octopus(operation=operation_get_file, config=self.config, url_suffix=url_suffix)
+        ext = headers.get(content_type_key).split("/")[-1]
+        if "+" in ext:
+            ext = ext.split("+")[0]
+        return content, ext
+
+    def get_logo(self, item_type, item_id):
+        try:
+            self.logger.info(f"get logo for {item_type} {item_id}")
+            address = f"{item_type}/{item_id}/{item_type_logo}"
+            return self.get_octopus_file(address=address)
+        except Exception as err:
+            self.log_error_print(msg=f"Failed to get logo for {item_type} {item_id} with {err}")
+            return None, None
+
+    def save_logo(self, item_type, item_id):
+        content, ext = self.get_logo(item_type=item_type, item_id=item_id)
+        if not content:
+            self.log_error_print(msg=f"{item_type} {item_id} has no logo and cannot be saved")
+            return
+        logo_file = self.local_logo_file(item_type=item_type, item_id=item_id, ext=ext)
+        self.logger.info(f"saving logo for {item_type} {item_id} to local file {logo_file}")
+        write_binary_file(local_file=logo_file, content=content)
+
+    def local_logo_file(self, item_type, item_id, ext):
+        return self.get_local_single_item_file(item_name=f"{item_id}_logo.{ext}", item_type=item_type, no_ext=True)
+
+    def post_logo(self, item_type, item_id, file_name, content):
+        self.log_info_print(f"post logo {file_name} to {item_type} {item_id}")
+        if self.config.overwrite:
+            self.log_info_print(msg=f"overwriting the existing logo")
+            address = f"{item_type}/{item_id}/{item_type_logo}?overwriteMode=OverwriteExisting"
+        else:
+            self.log_info_print(msg=f"skipping the existing logo if it exists")
+            address = f"{item_type}/{item_id}/{item_type_logo}?overwriteMode=IgnoreIfExists"
+        return self.request_octopus_item(address=address, operation=operation_post_file,
+                                         files={file_key: (file_name, content)})

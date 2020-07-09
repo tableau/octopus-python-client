@@ -50,7 +50,8 @@ def call_octopus(config: Config, url_suffix=None, operation=None, payload=None, 
             elif operation.lower() == operation_get_file:
                 session_response = session.get(url, headers=headers, verify=config.pem)
                 if session_response.status_code == 200:
-                    return session_response.content
+                    logger.info("response headers: " + str(session_response.headers))
+                    return session_response.content, session_response.headers
             elif operation.lower() == operation_post_file:
                 session_response = session.post(url, files=files, headers=headers, verify=config.pem)
             else:
@@ -58,6 +59,7 @@ def call_octopus(config: Config, url_suffix=None, operation=None, payload=None, 
                                       err=f"Invalid operation: {operation}; only post, get, put, delete, get_file, "
                                           f"post_file are supported")
             logger.info("response status code: " + str(session_response.status_code))
+            logger.info("response headers: " + str(session_response.headers))
             response_json = ""
             if session_response.text:
                 response_json = session_response.json()
@@ -65,7 +67,7 @@ def call_octopus(config: Config, url_suffix=None, operation=None, payload=None, 
                 log_raise_value_error(local_logger=logger,
                                       err=f"Error code: {session_response.status_code}; Reason: "
                                           f"{session_response.reason}; {response_json}")
-            return response_json
+            return response_json, session_response.headers
         except requests.exceptions.RequestException as e:
             log_raise_value_error(local_logger=logger, err=e)
 
@@ -75,30 +77,32 @@ def run():
     print("==================== test octopus http requests ===================")
     # octopus_config = {"endpoint": "https://demo.octopusdeploy.com/api/", "api_key": None, "user_name": "guest",
     #                   "password": "guest", "pem": False}
-    response = call_octopus(config=Config(), url_suffix="Spaces-1/environments")
+    response, headers = call_octopus(config=Config(), url_suffix="Spaces-1/environments")
     print(response)
     package_name_version = "SampleFunction.1.0.1"
-    response = call_octopus(config=Config(),
-                            url_suffix=f"Spaces-1/packages/packages-{package_name_version}")
+    response, headers = \
+        call_octopus(config=Config(), url_suffix=f"Spaces-1/packages/packages-{package_name_version}")
     package_dict = response
     print()
     print(package_dict)
     file_name = f"{package_dict.get('PackageId')}.{package_dict.get('Version')}{package_dict.get('FileExtension')}"
     print(file_name)
-    content = call_octopus(config=Config(),
-                           url_suffix=f"Spaces-1/packages/packages-{package_name_version}/raw",
-                           operation=operation_get_file)
+    content, headers = \
+        call_octopus(config=Config(),
+                     url_suffix=f"Spaces-1/packages/packages-{package_name_version}/raw",
+                     operation=operation_get_file)
     print(len(content))
 
     dst_octopus_config = Config()
     dst_octopus_config.endpoint = "http://localhost/api/"
     dst_octopus_config.api_key = "API-XXX"
 
-    upload_response = call_octopus(config=dst_octopus_config,
-                                   url_suffix="Spaces-1/packages/raw?overwriteMode=OverwriteExisting",
-                                   # IgnoreIfExists
-                                   operation=operation_post_file,
-                                   files={"file": (file_name, content)})
+    upload_response, headers = \
+        call_octopus(config=dst_octopus_config,
+                     url_suffix="Spaces-1/packages/raw?overwriteMode=OverwriteExisting",
+                     # IgnoreIfExists
+                     operation=operation_post_file,
+                     files={"file": (file_name, content)})
     print(upload_response)
 
     file = open(file_name, "wb")

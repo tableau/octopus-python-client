@@ -15,7 +15,7 @@ from octopus_python_client.common import name_key, tags_key, id_key, item_type_t
     item_id_prefix_to_type_dict, positive_integer_regex, team_id_key, outer_space_clone_types, item_type_users, \
     item_type_spaces, default_password, is_service_key, space_managers_teams, item_type_teams, package_id_key, \
     comma_sign, cloned_from_project_id, item_type_runbook_processes, item_type_project_triggers, file_extension_key, \
-    feed_id_key
+    feed_id_key, item_types_with_logo
 from octopus_python_client.config import Config
 from octopus_python_client.constants import Constants
 from octopus_python_client.utilities.helper import find_item, save_file, find_matched_sub_list, log_raise_value_error
@@ -398,7 +398,32 @@ class Migration:
                     f"{self._dst_config.space_id} with function {post_process.__name__}")
             post_process(src_id=src_id_value, dst_id=dst_id_value)
 
+        if item_type in item_types_with_logo and (not dst_item_exist or self._dst_config.overwrite):
+            try:
+                self._clone_logos(item_type=item_type, src_id=src_id_value, dst_id=dst_id_value)
+            except Exception as err:
+                self._dst_common.log_error_print(
+                    local_logger=self.logger,
+                    msg=f"Failed to clone logo for {item_type} {src_id_value} to {dst_id_value} with {err}")
+
         return dst_id_value
+
+    def _clone_logos(self, item_type: str, src_id: str, dst_id: str):
+        self._dst_common.log_info_print(
+            local_logger=self.logger, msg=f"cloning logo for type {item_type} from {src_id} to {dst_id}")
+        if self._src_config.local_data:
+            # TODO search for the local file and load it
+            ext = "*"
+            local_logo_file = self._src_common.local_logo_file(item_type=item_type, item_id=src_id, ext=ext)
+            self._dst_common.log_info_print(local_logger=self.logger, msg=f"loading logo file from {local_logo_file}")
+            content = open(local_logo_file, 'rb')
+        else:
+            content, ext = self._src_common.get_logo(item_type=item_type, item_id=src_id)
+        file_name = f"logo.{ext}"
+        dst_response = self._dst_common.post_logo(
+            item_type=item_type, item_id=dst_id, file_name=file_name, content=content)
+        self._dst_common.log_info_print(local_logger=self.logger, item=dst_response,
+                                        msg=f"logo was cloned successfully as {file_name}")
 
     def _clone_type_to_space(self, item_type):
         if not item_type:

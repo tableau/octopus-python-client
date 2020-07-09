@@ -235,8 +235,7 @@ class ReleaseDeployment:
         common = Common(config=config)
 
         # TODO project_name
-        assert (release_id or project_name) and not (release_id and project_name), \
-            "either release_id or project_name must exist, not both!"
+        assert (release_id or project_name), "either release_id or project_name must exist!"
         assert environment_name, "environment_name must not be empty!"
         assert tenant_name, "tenant_name must not be empty!"
 

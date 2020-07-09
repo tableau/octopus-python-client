@@ -39,7 +39,8 @@ class OptionsWidgets(tk.Frame):
                 title="Select type: ")
         elif self.server.config.action == Actions.ACTION_CLONE_PROJECT_RELATED:
             self.set_clone_project_related()
-        elif self.server.config.action == Actions.ACTION_CREATE_RELEASE:
+        elif self.server.config.action == Actions.ACTION_CREATE_RELEASE \
+                or self.server.config.action == Actions.ACTION_CREATE_DEPLOYMENT:
             projects_list = self.server.get_list_from_one_type(item_type=item_type_projects)
             self.project_id_var = CommonWidgets.set_radio_items_frame(
                 parent=self, list_items=projects_list, default_id=self.server.config.project_id,

@@ -1108,3 +1108,8 @@ class Common:
         # In literal string: Releases-10000 < Releases-9999 so converting to integer to compare
         releases_list.sort(key=lambda one_release: int(one_release.get(id_key).split(hyphen_sign)[1]), reverse=True)
         return releases_list
+
+    def get_deployment_information(self, release_id: str):
+        self.logger.info(f"Gets all of the information necessary for creating or editing a deployment for {release_id}")
+        address = f"{item_type_releases}/{release_id}/{item_type_deployments}/template"
+        return self.request_octopus_item(address=address)

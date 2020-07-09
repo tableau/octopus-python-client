@@ -166,3 +166,10 @@ class CommonWidgets:
                               f"      \u21D3     \u21D3     \u21D3     \u21D3     \u21D3",
                  bd=2, relief="groove").grid(sticky=tk.EW)
         ttk.Separator(parent, orient=tk.HORIZONTAL).grid(sticky=tk.EW)
+
+    @staticmethod
+    def set_text_entry(parent, title: str, text_var: tk.StringVar):
+        tk.Label(parent, text=title).grid(sticky=tk.W)
+        text_entry = tk.Entry(parent, width=CommonWidgets.WIDTH_120, textvariable=text_var)
+        text_entry.grid(sticky=tk.W)
+        return text_entry

@@ -8,7 +8,7 @@ from tkinter import messagebox
 
 from octopus_python_client.actions import Actions, ACTIONS_DICT
 from octopus_python_client.common import Common, item_type_channels, project_id_key, name_key, id_key, \
-    item_type_projects, release_versions_key, version_key, item_type_packages
+    item_type_projects, release_versions_key, version_key, item_type_packages, item_type_environments, item_type_tenants
 from octopus_python_client.constants import Constants
 from octopus_python_client.gui.common_widgets import CommonWidgets
 from octopus_python_client.migration import Migration
@@ -33,15 +33,21 @@ class SubmitWidgets(tk.Frame):
 
         self.channel_id_var = None
         self.combobox_var = None
+        self.deployment_notes_var = None
+        self.env_frame = tk.Frame(self)
+        self.env_id_var = None
         self.new_item_name_var = None
         self.new_name_entry = None
         self.overwrite_var = None
         self.package_history_var = None
         self.package_name = ""
+        self.release_id = ""
         self.release_notes_var = None
         self.release_version_num_var = None
         self.services_versions_text = None
         self.services_versions_vs_name = ""
+        self.tenant_frame = tk.Frame(self)
+        self.tenant_id_var = None
 
         self.update_step()
 
@@ -50,6 +56,8 @@ class SubmitWidgets(tk.Frame):
                  bd=2, relief="groove").grid(sticky=tk.W)
         if self.server.config.action == Actions.ACTION_CREATE_RELEASE:
             self.set_create_release_frame()
+        elif self.server.config.action == Actions.ACTION_CREATE_DEPLOYMENT:
+            self.set_create_deployment_frame()
         elif self.server.config.action == Actions.ACTION_CLONE_PROJECT_RELATED:
             if not self.server.config.project_ids:
                 messagebox.showerror(title=f"No project selected", message=f"No destination project was selected!")
@@ -68,6 +76,51 @@ class SubmitWidgets(tk.Frame):
             self.set_clone_item_frame(items_list=items_list)
         else:
             self.submit_button.config(state=tk.DISABLED)
+
+    def set_create_deployment_frame(self):
+        releases_list = self.server.get_project_releases_sorted_list(project_id=self.server.config.project_id)
+        project_name = self.server.get_item_name_by_id(item_type=item_type_projects,
+                                                       item_id=self.server.config.project_id)
+        if not releases_list:
+            messagebox.showerror(
+                title=f"No release",
+                message=f"Project {project_name} does not have any releases. Please create a release first")
+            self.submit_button.config(state=tk.DISABLED)
+            return
+        texts_list = [release.get(version_key) + SubmitWidgets.DIVIDER_BAR + release.get(id_key) for release in
+                      releases_list]
+        self.combobox_var = CommonWidgets.set_combobox_items_frame(
+            parent=self, texts_list=texts_list, bind_func=self.process_release,
+            title=f"Select a release for project {project_name} (the latest release is pre-selected)")
+        self.deployment_notes_var = tk.StringVar()
+        self.deployment_notes_var.set(self.server.config.deployment_notes)
+        CommonWidgets.set_text_entry(parent=self, title="Deployment comments:", text_var=self.deployment_notes_var)
+        self.process_release()
+
+    def process_release(self, event=None):
+        logger.info(msg=str(event))
+        if SubmitWidgets.DIVIDER_BAR in self.combobox_var.get():
+            release_version_id = self.combobox_var.get().split(SubmitWidgets.DIVIDER_BAR)
+            self.release_id = release_version_id[1]
+        else:
+            self.release_id = self.combobox_var.get()
+        promotion_information_dict = self.server.get_deployment_information(release_id=self.release_id)
+        envs_list = promotion_information_dict.get("PromoteTo")
+        tenants_list = promotion_information_dict.get("TenantPromotions")
+
+        self.env_frame.destroy()
+        self.tenant_frame.destroy()
+
+        self.env_frame = tk.Frame(self)
+        self.env_id_var = CommonWidgets.set_radio_items_frame(
+            parent=self.env_frame, list_items=envs_list, title=f"Select an environment:")
+        self.env_frame.grid(sticky=tk.W)
+
+        self.tenant_frame = tk.Frame(self)
+        self.tenant_id_var = CommonWidgets.set_radio_items_frame(
+            parent=self.tenant_frame, list_items=tenants_list, default_id=self.server.config.tenant_id,
+            title=f"Select a tenant:")
+        self.tenant_frame.grid(sticky=tk.W)
 
     def set_release_notes(self, event=None):
         logger.info(msg=str(event))
@@ -115,7 +168,7 @@ class SubmitWidgets(tk.Frame):
         self.services_versions_text.insert(tk.END, pformat(select_packages_dict))
         self.services_versions_text.config(state=tk.DISABLED)
 
-    def set_services_versions(self):
+    def set_services_versions_textbox(self):
         tk.Label(self, text="The package versions which will be used for creating the new release:").grid(sticky=tk.W)
         self.services_versions_text = tk.Text(self, width=CommonWidgets.WIDTH_80, height=CommonWidgets.HEIGHT_7)
         self.services_versions_text.grid(sticky=tk.W)
@@ -138,7 +191,7 @@ class SubmitWidgets(tk.Frame):
         if services_versions_list:
             self.set_services_versions_frame(project_name=project_name)
             self.set_release_notes_entry().config(state=CommonWidgets.READ_ONLY)
-            self.set_services_versions()
+            self.set_services_versions_textbox()
             self.set_release_notes()
         else:
             self.set_release_notes_entry()
@@ -236,6 +289,10 @@ class SubmitWidgets(tk.Frame):
         if self.package_history_var:
             self.server.config.package_history = \
                 True if self.package_history_var.get() == CommonWidgets.SELECTED else False
+        if self.tenant_id_var:
+            self.server.config.tenant_id = self.tenant_id_var.get()
+        if self.deployment_notes_var:
+            self.server.config.deployment_notes = self.deployment_notes_var.get()
         self.server.config.save_config()
         self.source.config.save_config()
         return True
@@ -251,6 +308,7 @@ class SubmitWidgets(tk.Frame):
             if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
                 run_action = True
                 Migration(src_config=self.source.config, dst_config=self.server.config).clone_space_types()
+
         elif self.server.config.action == Actions.ACTION_CLONE_SPACE_ITEM:
             # msg = f"cloning {item_type} {item_badge} from {self._src_config.space_id} on server "
             # f"{self._src_config.endpoint} to {self._dst_config.space_id} on server {self._dst_config.endpoint}")
@@ -266,6 +324,7 @@ class SubmitWidgets(tk.Frame):
                     pars_dict = {Constants.NEW_ITEM_NAME_KEY: self.new_item_name_var.get()}
                 Migration(src_config=self.source.config, dst_config=self.server.config) \
                     .clone_space_item_new_name(pars_dict=pars_dict)
+
         elif self.server.config.action == Actions.ACTION_CLONE_PROJECT_RELATED:
             msg = f"Are you sure you want to clone type {self.server.config.type} of {self.combobox_var.get()}" \
                   f" from {self.source.config.space_id} on server {self.source.config.endpoint} to " \
@@ -279,6 +338,7 @@ class SubmitWidgets(tk.Frame):
                              Constants.PROJECT_IDS_KEY: self.server.config.project_ids}
                 Migration(src_config=self.source.config, dst_config=self.server.config) \
                     .clone_space_item_new_name(pars_dict=pars_dict)
+
         elif self.server.config.action == Actions.ACTION_CREATE_RELEASE:
             project_name = self.server.get_or_delete_single_item_by_id(
                 item_type=item_type_projects, item_id=self.server.config.project_id).get(name_key)
@@ -292,8 +352,25 @@ class SubmitWidgets(tk.Frame):
                 ReleaseDeployment.create_release_direct(
                     config=self.server.config, release_version=self.server.config.release_version,
                     project_name=project_name, channel_name=channel_name, notes=self.server.config.release_notes)
+
+        elif self.server.config.action == Actions.ACTION_CREATE_DEPLOYMENT:
+            project_name = self.server.get_item_name_by_id(
+                item_type=item_type_projects, item_id=self.server.config.project_id)
+            env_name = self.server.get_item_name_by_id(
+                item_type=item_type_environments, item_id=self.env_id_var.get())
+            tenant_name = self.server.get_item_name_by_id(
+                item_type=item_type_tenants, item_id=self.tenant_id_var.get())
+            msg = f"Are you sure you want to create a new deployment for {self.release_id} in project {project_name} " \
+                  f"with environment {env_name}, tenant {tenant_name} and comments {self.deployment_notes_var.get()}?"
+            if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
+                run_action = True
+                ReleaseDeployment.create_deployment_direct(
+                    config=self.server.config, environment_name=env_name, tenant_name=tenant_name,
+                    release_id=self.release_id, project_name=project_name, comments=self.deployment_notes_var.get())
+
         else:
             print("not a valid action")
+
         if run_action:
             messagebox.showinfo(
                 title="Done!",

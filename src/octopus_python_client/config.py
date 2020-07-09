@@ -50,6 +50,7 @@ class Config(BaseConfig):
 
         self.action = Actions.ACTION_GET_SPACES
         self.channel_id = ""
+        self.deployment_notes = ""
         self.local_data = False
         self.no_stdout = False
         self.overwrite = False
@@ -59,6 +60,7 @@ class Config(BaseConfig):
         self.project_ids = []
         self.release_notes = ""
         self.release_version = ""
+        self.tenant_id = ""
         self.type = ""
         self.types = []
 

@@ -54,10 +54,13 @@ class SubmitWidgets(tk.Frame):
     def update_step(self):
         tk.Label(self, text=f"{self.server.config.action} ({ACTIONS_DICT.get(self.server.config.action)})",
                  bd=2, relief="groove").grid(sticky=tk.W)
+
         if self.server.config.action == Actions.ACTION_CREATE_RELEASE:
             self.set_create_release_frame()
+
         elif self.server.config.action == Actions.ACTION_CREATE_DEPLOYMENT:
             self.set_create_deployment_frame()
+
         elif self.server.config.action == Actions.ACTION_CLONE_PROJECT_RELATED:
             if not self.server.config.project_ids:
                 messagebox.showerror(title=f"No project selected", message=f"No destination project was selected!")
@@ -66,15 +69,25 @@ class SubmitWidgets(tk.Frame):
             items_list = self.source.get_list_items_by_conditional_id(
                 item_type=self.server.config.type, condition_key=project_id_key,
                 condition_id=self.source.config.project_id)
-            self.set_clone_item_frame(items_list=items_list)
+            if self.assert_items_list(items_list=items_list):
+                self.set_clone_item_frame(items_list=items_list)
+
         elif self.server.config.action == Actions.ACTION_CLONE_SPACE \
                 or self.server.config.action == Actions.ACTION_GET_SPACES:
             if item_type_packages in self.server.config.types:
                 self.set_package_history_widget()
             self.set_overwrite_widget()
+
         elif self.server.config.action == Actions.ACTION_CLONE_SPACE_ITEM:
             items_list = self.source.get_list_from_one_type(self.server.config.type)
-            self.set_clone_item_frame(items_list=items_list)
+            if self.assert_items_list(items_list=items_list):
+                self.set_clone_item_frame(items_list=items_list)
+
+        elif self.server.config.action == Actions.ACTION_GET:
+            items_list = self.server.get_list_from_one_type(self.server.config.type)
+            if self.assert_items_list(items_list=items_list):
+                self.set_get_put_item_frame(items_list=items_list)
+
         else:
             self.submit_button.config(state=tk.DISABLED)
 
@@ -197,60 +210,86 @@ class SubmitWidgets(tk.Frame):
         else:
             self.set_release_notes_entry()
 
+    def set_get_put_item_frame(self, items_list: list):
+        self.set_combobox_items_frame(items_list=items_list, common=self.server, bind_func=self.set_target_item_id)
+        self.set_target_item_id()
+        self.set_check_package_overwrite()
+
+    def assert_items_list(self, items_list: list):
+        if not items_list or len(items_list) == 0:
+            messagebox.showerror(title=f"No item", message=f"{self.server.config.type} has no item")
+            self.submit_button.config(state=tk.DISABLED)
+            return False
+        return True
+
     def set_clone_item_frame(self, items_list: list):
-        if not self.set_combobox_items_frame(items_list=items_list):
-            return
-
-        tk.Label(self, text="New item name to be cloned (grayed out if the item has no name): ").grid(sticky=tk.W)
-        self.new_name_entry = tk.Entry(self, width=CommonWidgets.WIDTH_40, textvariable=self.new_item_name_var)
-        self.new_name_entry.grid(sticky=tk.W)
+        self.set_combobox_items_frame(items_list=items_list, common=self.source, bind_func=self.set_new_item_name)
+        self.set_new_name_item_frame()
         self.set_new_item_name()
+        self.set_check_package_overwrite()
 
+    def set_check_package_overwrite(self):
         if item_type_packages == self.server.config.type:
             self.set_package_history_widget()
         self.set_overwrite_widget()
 
+    def set_new_name_item_frame(self):
+        tk.Label(self, text="New item name to be cloned (grayed out if the item has no name): ").grid(sticky=tk.W)
+        self.new_item_name_var = tk.StringVar()
+        self.new_name_entry = tk.Entry(self, width=CommonWidgets.WIDTH_40, textvariable=self.new_item_name_var)
+        self.new_name_entry.grid(sticky=tk.W)
+
+    def set_combobox_items_frame(self, items_list: list, common: Common, bind_func):
+        default_item = find_item(lst=items_list, key=id_key, value=common.config.item_id)
+        default_text = self.construct_item_name_id_text(item=default_item)
+        texts_list = [self.construct_item_name_id_text(item=item) for item in items_list]
+        self.combobox_var = CommonWidgets.set_combobox_items_frame(
+            parent=self, texts_list=texts_list, bind_func=bind_func, default_text=default_text,
+            title=f"Select an item for type {self.server.config.type} (item name|id, or version|id or id only:")
+
     def set_new_item_name(self, event=None):
         logger.info(msg=str(event))
-        if SubmitWidgets.DIVIDER_BAR in self.combobox_var.get():
-            item_name_id = self.combobox_var.get().split(SubmitWidgets.DIVIDER_BAR)
-            item_name = item_name_id[0]
+        self.server.log_info_print(f"split {self.combobox_var.get()}")
+        item_name, item_id = SubmitWidgets.split_item_name_id(self.combobox_var.get())
+        if item_name:
             self.new_item_name_var.set(item_name)
-            item_id = item_name_id[1]
         else:
             self.new_name_entry.config(state=CommonWidgets.READ_ONLY)
-            item_id = self.combobox_var.get()
         self.source.config.item_id = item_id
         self.source.config.item_name = ""
+        self.server.log_info_print(f"item_id: {item_id}")
+
+    def set_target_item_id(self, event=None):
+        logger.info(msg=str(event))
+        item_name, item_id = SubmitWidgets.split_item_name_id(self.combobox_var.get())
+        self.server.config.item_id = item_id
+        self.server.config.item_name = ""
+        self.server.log_info_print(f"item_id: {item_id}")
 
     @staticmethod
-    def construct_item_name_id_text(item: dict):
+    def split_item_name_id(item_name_id: str):
+        if SubmitWidgets.DIVIDER_BAR in item_name_id:
+            item_name_id_list = item_name_id.split(SubmitWidgets.DIVIDER_BAR)
+            item_name = item_name_id_list[0]
+            item_id = item_name_id_list[1]
+        else:
+            item_name = ""
+            item_id = item_name_id
+        return item_name, item_id
+
+    def construct_item_name_id_text(self, item):
         if not item:
             return None
+        elif isinstance(item, str):
+            return item
         elif item.get(name_key) and item.get(id_key):
             return item.get(name_key) + SubmitWidgets.DIVIDER_BAR + item.get(id_key)
+        elif self.server.config.action == Actions.ACTION_GET and item.get(version_key) and item.get(id_key):
+            return item.get(version_key) + SubmitWidgets.DIVIDER_BAR + item.get(id_key)
         elif item.get(id_key):
             return item.get(id_key)
         else:
             return ""
-
-    def set_combobox_items_frame(self, items_list: list):
-        if not items_list:
-            messagebox.showerror(title=f"No item", message=f"{self.server.config.type} has no item")
-            self.submit_button.config(state=tk.DISABLED)
-            return False
-
-        self.new_item_name_var = tk.StringVar()
-
-        default_item = find_item(lst=items_list, key=id_key, value=self.source.config.item_id)
-        default_text = SubmitWidgets.construct_item_name_id_text(item=default_item)
-        texts_list = [SubmitWidgets.construct_item_name_id_text(item=item) for item in items_list]
-        self.combobox_var = CommonWidgets.set_combobox_items_frame(
-            parent=self, texts_list=texts_list, bind_func=self.set_new_item_name, default_text=default_text,
-            title=f"Select an item for type {self.server.config.type} (item name|id, or id only for items without "
-                  f"name):")
-
-        return True
 
     def set_radio_channels_frame(self):
         channels_list = self.server.get_list_items_by_conditional_id(
@@ -300,15 +339,15 @@ class SubmitWidgets(tk.Frame):
 
     def run_thread(self):
         run_action = False
-        historical_package_msg = f" The historical versions of packages will " \
+        historical_package_msg = f"\nThe historical versions of packages will " \
                                  f"{'' if self.server.config.package_history else 'NOT '}be downloaded. "
+        overwrite_msg = f"\nThe existing entities will {'' if self.server.config.overwrite else 'NOT '}be overwritten."
         if self.server.config.action == Actions.ACTION_CLONE_SPACE:
             msg = f"Are you sure you want to clone types {self.server.config.types} from " \
                   f"{self.source.config.space_id} on server {self.source.config.endpoint} to " \
-                  f"{self.server.config.space_id} on server {self.server.config.endpoint}? " \
-                  f"The existing entities with the same name will " \
-                  f"{' ' if self.server.config.overwrite else 'NOT '}be overwritten."
+                  f"{self.server.config.space_id} on server {self.server.config.endpoint}?"
             msg += (historical_package_msg if item_type_packages in self.server.config.types else "")
+            msg += overwrite_msg
             if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
                 run_action = True
                 Migration(src_config=self.source.config, dst_config=self.server.config).clone_space_types()
@@ -319,9 +358,9 @@ class SubmitWidgets(tk.Frame):
             msg = f"Are you sure you want to clone type {self.server.config.type} of {self.combobox_var.get()}" \
                   f" from {self.source.config.space_id} on server {self.source.config.endpoint} to " \
                   f"{self.new_item_name_var.get()} in {self.server.config.space_id} on server " \
-                  f"{self.server.config.endpoint}? The existing entities with the same name will " \
-                  f"{' ' if self.server.config.overwrite else 'NOT '}be overwritten."
+                  f"{self.server.config.endpoint}?"
             msg += (historical_package_msg if item_type_packages == self.server.config.type else "")
+            msg += overwrite_msg
             if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
                 run_action = True
                 pars_dict = None
@@ -334,9 +373,8 @@ class SubmitWidgets(tk.Frame):
             msg = f"Are you sure you want to clone type {self.server.config.type} of {self.combobox_var.get()}" \
                   f" from {self.source.config.space_id} on server {self.source.config.endpoint} to " \
                   f"{self.new_item_name_var.get()} in projects {self.server.config.project_ids} in " \
-                  f"{self.server.config.space_id} on server {self.server.config.endpoint}? " \
-                  f"The existing entities with the same name will " \
-                  f"{' ' if self.server.config.overwrite else 'NOT '}be overwritten."
+                  f"{self.server.config.space_id} on server {self.server.config.endpoint}?"
+            msg += overwrite_msg
             if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
                 run_action = True
                 pars_dict = {Constants.NEW_ITEM_NAME_KEY: self.new_item_name_var.get(),
@@ -373,20 +411,30 @@ class SubmitWidgets(tk.Frame):
                     config=self.server.config, environment_name=env_name, tenant_name=tenant_name,
                     release_id=self.release_id, project_name=project_name, comments=self.deployment_notes_var.get())
 
-        elif self.server.config.action == Actions.ACTION_GET_SPACES:
-            spaces_ids = ",".join(self.server.config.space_ids)
-            types = ",".join(self.server.config.types)
-            msg = f"Are you sure you want to download types {types} from spaces {spaces_ids} on server " \
-                  f"{self.server.config.endpoint}? The existing local entities files will " \
-                  f"{'' if self.server.config.overwrite else 'NOT '}be overwritten."
-            msg += (historical_package_msg if item_type_packages in self.server.config.types else "")
+        elif self.server.config.action == Actions.ACTION_GET:
+            msg = f"Are you sure you want to download item {self.server.config.item_id} from space " \
+                  f"{self.server.config.space_id} on server {self.server.config.endpoint}?"
+            msg += (historical_package_msg if item_type_packages == self.server.config.type else "")
+            msg += overwrite_msg
             if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
                 run_action = True
+                self.server.get_single_item_by_name_or_id_save(
+                    item_type=self.server.config.type, item_id=self.server.config.item_id)
+
+        elif self.server.config.action == Actions.ACTION_GET_SPACES:
+            msg = f"Are you sure you want to download types {self.server.config.types} from spaces " \
+                  f"{self.server.config.space_ids} on server {self.server.config.endpoint}?"
+            msg += (historical_package_msg if item_type_packages in self.server.config.types else "")
+            msg += overwrite_msg
+            if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
+                run_action = True
+                spaces_ids = ",".join(self.server.config.space_ids)
+                types = ",".join(self.server.config.types)
                 self.server.get_spaces_save(space_id_or_name_comma_delimited=spaces_ids,
                                             item_types_comma_delimited=types)
 
         else:
-            print("not a valid action")
+            self.server.log_info_print("not a valid action")
 
         if run_action:
             messagebox.showinfo(

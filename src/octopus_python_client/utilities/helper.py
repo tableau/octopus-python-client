@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 def find_index(lst=None, key=None, value=None):
     logger.info(f"searching the first occurrence of {key} = {value} in the list and return the index...")
     for i, dic in enumerate(lst):
-        if dic.get(key) == value:
+        if isinstance(dic, dict) and dic.get(key) == value:
             logger.info(f"found the first occurrence at index {i}")
             return i
     logger.warning(f"no matched item found")

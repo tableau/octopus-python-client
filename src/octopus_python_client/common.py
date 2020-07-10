@@ -442,6 +442,14 @@ class Common:
                                                 item_type=item_type)
             save_file(file_path_name=ext_file, content=ext_items_dict)
 
+    def download_historical_packages(self, package_dict):
+        self.log_info_print(msg=f"downloading all historical versions of {package_dict.get(package_id_key)}")
+        package_history_list = self.get_package_history_list(package_dict)
+        for historical_package in package_history_list:
+            self.log_info_print(msg=f"downloading {historical_package.get(id_key)}")
+            historical_package[file_extension_key] = package_dict.get(file_extension_key)
+            self.save_package(package_dict=historical_package)
+
     # then save the all items into a local file (warning for overwrite)
     def get_one_type_save(self, item_type):
         if not item_type:
@@ -454,16 +462,11 @@ class Common:
             user_ids = [user.get(id_key) for user in list_users]
             self.get_ext_types_save(item_type=item_type_users, item_ids=user_ids)
         elif item_type == item_type_packages:
-            list_packages = self.get_list_items_from_all_items(all_items=all_items)
-            for package in list_packages:
+            packages_list = self.get_list_items_from_all_items(all_items=all_items)
+            for package in packages_list:
                 self.log_info_print(msg=f"downloading {package.get(id_key)}...")
                 if self.config.package_history:
-                    self.log_info_print(msg=f"downloading all historical versions of {package.get(package_id_key)}")
-                    package_history_list = self.get_package_history_list(package)
-                    for historical_package in package_history_list:
-                        self.log_info_print(msg=f"downloading {historical_package.get(id_key)}")
-                        historical_package[file_extension_key] = package.get(file_extension_key)
-                        self.save_package(package_dict=historical_package)
+                    self.download_historical_packages(package_dict=package)
                 else:
                     self.log_info_print(msg=f"downloading the latest version of {package.get(id_key)}")
                     self.save_package(package_dict=package)
@@ -592,7 +595,7 @@ class Common:
         # always_overwrite_or_compare_overwrite(local_file=local_item_file, data=item)
         save_file(file_path_name=local_item_file, content=item)
         self.logger.info(f'A local file {local_item_file} was saved or overwritten with the data')
-        return item
+        return local_item_file
 
     # get tenant variables
     def get_tenant_variables(self, tenant_id):
@@ -607,6 +610,7 @@ class Common:
         dst_file = self.get_local_single_item_file(item_name=tenant_id + underscore_sign + item_type_variables,
                                                    item_type=item_type_tenant_variables)
         save_file(file_path_name=dst_file, content=tenant_variables)
+        self.log_info_print(msg=f"saved {item_type_tenant_variables} for tenant {tenant_id} to {dst_file}")
         return tenant_variables
 
     def put_post_tenant_variables(self, tenant_id, tenant_variables):
@@ -658,26 +662,33 @@ class Common:
     # since there is no 'Name' in some of the json response, we have to use 'Id' as the file name to save it
     def get_single_item_by_name_or_id_save(self, item_type, item_name=None, item_id=None):
         item_badge = item_name if item_name else item_id
-        self.log_info_print(msg=f"getting {item_type} {item_badge} in space {self.config.space_id} and saving file...")
+        self.log_info_print(msg=f"Getting {item_type} {item_badge} in space {self.config.space_id} and saving file...")
         item = self.get_single_item_by_name_or_id(item_type=item_type, item_name=item_name, item_id=item_id)
-        self.save_single_item(item_type=item_type, item=item)
+        local_item_file = self.save_single_item(item_type=item_type, item=item)
+        self.log_info_print(msg=f"Saved {item_type} {item_badge} to {local_item_file}")
         # process child items
         if item_type == item_type_projects:
-            self.logger.info(f"the item type is {item_type_projects}, so also get its deployment_process and variables")
+            self.log_info_print(f"For item type {item_type_projects}, also get its deployment_process and variables...")
             self.get_single_item_by_name_or_id_save(item_type=item_type_deployment_processes,
                                                     item_id=item.get(deployment_process_id_key))
             self.get_single_item_by_name_or_id_save(item_type=item_type_variables,
                                                     item_id=item.get(variable_set_id_key))
         elif item_type == item_type_library_variable_sets:
-            self.logger.info(f"the item type is {item_type_library_variable_sets}, so also get variables")
+            self.log_info_print(f"For item type{item_type_library_variable_sets}, also get variables")
             self.get_single_item_by_name_or_id_save(item_type=item_type_variables,
                                                     item_id=item.get(variable_set_id_key))
         elif item_type == item_type_tenants:
-            self.logger.info(f"the item type is {item_type_tenants}, so also get its variables")
+            self.log_info_print(f"For item type {item_type_tenants}, also get variables")
             self.get_tenant_variables_save(tenant_id=item.get(id_key))
         elif item_type == item_type_packages:
-            self.save_package(package_dict=item)
+            self.log_info_print(f"For item type {item_type_packages}, also download the package")
+            if self.config.package_history:
+                self.download_historical_packages(package_dict=item)
+            else:
+                self.log_info_print(msg=f"downloading the latest version of {item.get(id_key)}")
+                self.save_package(package_dict=item)
         if item_type in item_types_with_logo:
+            self.log_info_print(f"For item type {item_types_with_logo}, also download the logo image")
             self.save_logo(item_type=item_type, item_id=item.get(id_key))
         return item
 
@@ -819,11 +830,11 @@ class Common:
         if not self.config.overwrite and input(
                 f"Are you sure to delete {item_type} {item_info} in {self.config.space_id} [Y/n]: ") != 'Y':
             return
-        self.log_info_print(msg=f"deleting {item_type} {item_info} in {self.config.space_id}...")
         try:
             self.get_or_delete_single_item_by_id(item_type=item_type, item_id=item.get(id_key), action=operation_delete)
+            self.log_info_print(msg=f"{item_type} {item_info} was deleted")
         except ValueError as err:
-            self.logger.warning(err)
+            self.log_warn_print(msg=str(err))
             self.log_info_print(msg=f"{item_type} {item_info} cannot be deleted and try to delete unused sub items in "
                                     f"{self.config.space_id}...")
             self.delete_sub_items(item_type=item_type, item_id=item.get(id_key))
@@ -1056,6 +1067,7 @@ class Common:
             return
         package_file = self.get_package_file(package_dict)
         write_binary_file(local_file=package_file, content=content)
+        self.log_info_print(msg=f"saved package {package_dict.get(id_key)} to local file {package_file}")
 
     def post_package(self, file_name, content):
         self.logger.info(f"post package {file_name} to space {self.config.space_id} on server {self.config.endpoint}")
@@ -1136,6 +1148,7 @@ class Common:
         logo_file = self.local_logo_file(item_type=item_type, item_id=item_id, ext=ext)
         self.logger.info(f"saving logo for {item_type} {item_id} to local file {logo_file}")
         write_binary_file(local_file=logo_file, content=content)
+        self.log_info_print(msg=f"saved logo of {item_type} {item_id} to local file {logo_file}")
 
     def local_logo_file(self, item_type, item_id, ext):
         return self.get_local_single_item_file(

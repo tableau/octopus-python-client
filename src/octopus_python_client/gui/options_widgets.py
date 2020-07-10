@@ -39,6 +39,11 @@ class OptionsWidgets(tk.Frame):
                 self, list_names=inside_space_download_types, default_names=self.server.config.types,
                 title="Select data types:")
 
+        elif self.server.config.action == Actions.ACTION_GET:
+            self.type_var = CommonWidgets.set_radio_names_frame(
+                parent=self, list_names=inside_space_download_types, default_name=self.server.config.type,
+                title="Select type: ")
+
         elif self.server.config.action == Actions.ACTION_CLONE_SPACE_ITEM:
             self.type_var = CommonWidgets.set_radio_names_frame(
                 parent=self, list_names=inside_space_clone_types, default_name=self.server.config.type,

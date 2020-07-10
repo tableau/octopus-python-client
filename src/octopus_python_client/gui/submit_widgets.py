@@ -2,6 +2,7 @@ import getpass
 import logging
 import threading
 import tkinter as tk
+from pathlib import Path
 from pprint import pformat
 from time import strftime, localtime
 from tkinter import messagebox
@@ -36,6 +37,7 @@ class SubmitWidgets(tk.Frame):
         self.deployment_notes_var = None
         self.env_frame = tk.Frame(self)
         self.env_id_var = None
+        self.local_file_var = None
         self.new_item_name_var = None
         self.new_name_entry = None
         self.overwrite_var = None
@@ -84,9 +86,10 @@ class SubmitWidgets(tk.Frame):
                 self.set_clone_item_frame(items_list=items_list)
 
         elif self.server.config.action == Actions.ACTION_GET:
-            items_list = self.server.get_list_from_one_type(self.server.config.type)
-            if self.assert_items_list(items_list=items_list):
-                self.set_get_put_item_frame(items_list=items_list)
+            self.set_get_item_frame()
+
+        elif self.server.config.action == Actions.ACTION_UPDATE:
+            self.set_update_item_frame()
 
         else:
             self.submit_button.config(state=tk.DISABLED)
@@ -210,10 +213,25 @@ class SubmitWidgets(tk.Frame):
         else:
             self.set_release_notes_entry()
 
-    def set_get_put_item_frame(self, items_list: list):
-        self.set_combobox_items_frame(items_list=items_list, common=self.server, bind_func=self.set_target_item_id)
-        self.set_target_item_id()
-        self.set_check_package_overwrite()
+    def set_get_item_frame(self):
+        items_list = self.server.get_list_from_one_type(self.server.config.type)
+        if self.assert_items_list(items_list=items_list):
+            self.set_combobox_items_frame(items_list=items_list, common=self.server, bind_func=self.set_target_item_id)
+            self.set_target_item_id()
+            self.set_check_package_overwrite()
+
+    def set_update_item_frame(self):
+        items_list = self.server.get_list_from_one_type(self.server.config.type)
+        if self.assert_items_list(items_list=items_list):
+            self.set_combobox_items_frame(items_list=items_list, common=self.server, bind_func=self.set_local_file)
+            self.set_update_file_path_frame()
+            self.set_local_file()
+
+    def set_update_file_path_frame(self):
+        tk.Label(self, text="The local file as the configuration (Please make sure the file exists)").grid(sticky=tk.W)
+        self.local_file_var = tk.StringVar()
+        tk.Entry(self, width=CommonWidgets.WIDTH_120, textvariable=self.local_file_var, state=CommonWidgets.READ_ONLY) \
+            .grid(sticky=tk.W)
 
     def assert_items_list(self, items_list: list):
         if not items_list or len(items_list) == 0:
@@ -265,6 +283,20 @@ class SubmitWidgets(tk.Frame):
         self.server.config.item_id = item_id
         self.server.config.item_name = ""
         self.server.log_info_print(f"item_id: {item_id}")
+
+    def set_local_file(self, event=None):
+        logger.info(msg=str(event))
+        item_name, item_id = SubmitWidgets.split_item_name_id(self.combobox_var.get())
+        self.server.config.item_id = item_id
+        self.server.config.item_name = item_name
+        local_file = self.server.get_local_single_item_file_smartly(
+            item_type=self.server.config.type, item_name=item_name, item_id=item_id)
+        self.local_file_var.set(local_file)
+        if Path(local_file).is_file():
+            self.submit_button.config(state=tk.NORMAL)
+        else:
+            messagebox.showerror(title=f"File not exist", message=f"{local_file} does not exist")
+            self.submit_button.config(state=tk.DISABLED)
 
     @staticmethod
     def split_item_name_id(item_name_id: str):
@@ -411,16 +443,6 @@ class SubmitWidgets(tk.Frame):
                     config=self.server.config, environment_name=env_name, tenant_name=tenant_name,
                     release_id=self.release_id, project_name=project_name, comments=self.deployment_notes_var.get())
 
-        elif self.server.config.action == Actions.ACTION_GET:
-            msg = f"Are you sure you want to download item {self.server.config.item_id} from space " \
-                  f"{self.server.config.space_id} on server {self.server.config.endpoint}?"
-            msg += (historical_package_msg if item_type_packages == self.server.config.type else "")
-            msg += overwrite_msg
-            if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
-                run_action = True
-                self.server.get_single_item_by_name_or_id_save(
-                    item_type=self.server.config.type, item_id=self.server.config.item_id)
-
         elif self.server.config.action == Actions.ACTION_GET_SPACES:
             msg = f"Are you sure you want to download types {self.server.config.types} from spaces " \
                   f"{self.server.config.space_ids} on server {self.server.config.endpoint}?"
@@ -432,6 +454,26 @@ class SubmitWidgets(tk.Frame):
                 types = ",".join(self.server.config.types)
                 self.server.get_spaces_save(space_id_or_name_comma_delimited=spaces_ids,
                                             item_types_comma_delimited=types)
+
+        elif self.server.config.action == Actions.ACTION_GET:
+            msg = f"Are you sure you want to download item {self.server.config.item_id} from space " \
+                  f"{self.server.config.space_id} on server {self.server.config.endpoint}?"
+            msg += (historical_package_msg if item_type_packages == self.server.config.type else "")
+            msg += overwrite_msg
+            if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
+                run_action = True
+                self.server.get_single_item_by_name_or_id_save(
+                    item_type=self.server.config.type, item_id=self.server.config.item_id)
+
+        elif self.server.config.action == Actions.ACTION_UPDATE:
+            msg = f"Are you sure you want to update item {self.server.config.item_name} {self.server.config.item_id} " \
+                  f"from local file {self.local_file_var.get()} to space {self.server.config.space_id} on server " \
+                  f"{self.server.config.endpoint}?"
+            if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):
+                run_action = True
+                self.server.update_single_item_save(
+                    item_type=self.server.config.type, item_name=self.server.config.item_name,
+                    item_id=self.server.config.item_id)
 
         else:
             self.server.log_info_print("not a valid action")

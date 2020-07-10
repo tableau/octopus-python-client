@@ -366,20 +366,25 @@ class Common:
             return os.path.join(self.config.data_path, folder_outer_spaces, item_type_name,
                                 all_underscore + item_type_name + yaml_ext)
 
+    def get_local_single_item_file_from_item(self, item, item_type):
+        if not item or not item_type:
+            raise ValueError("item and item_type must not be empty!")
+        return self.get_local_single_item_file_smartly(
+            item_type=item_type, item_name=item.get(name_key), item_id=item.get(id_key))
+
     # get local item file smartly; three possibilities
     # use 'Name'
     # use 'Id' if 'Name' not available
     # use item_type if neither 'Id' nor 'Name' available
-    def get_local_single_item_file_from_item(self, item, item_type):
-        if not item or not item_type:
-            raise ValueError("item and item_type must not be empty!")
-        if item.get(name_key) and item_type not in item_types_with_duplicate_names:
-            local_item_file = self.get_local_single_item_file(item_name=item[name_key], item_type=item_type)
-        elif item.get(id_key):
-            local_item_file = self.get_local_single_item_file(item_name=item[id_key], item_type=item_type)
+    def get_local_single_item_file_smartly(self, item_type, item_name=None, item_id=None):
+        if not item_type:
+            raise ValueError("item_type must not be empty!")
+        if item_name and item_type not in item_types_with_duplicate_names:
+            return self.get_local_single_item_file(item_name=item_name, item_type=item_type)
+        elif item_id:
+            return self.get_local_single_item_file(item_name=item_id, item_type=item_type)
         else:
-            local_item_file = self.get_local_single_item_file(item_name=item_type, item_type=item_type)
-        return local_item_file
+            return self.get_local_single_item_file(item_name=item_type, item_type=item_type)
 
     # check if the local item file is the same as the remote item on Octopus server;
     # the remote item will be retrieved on the fly
@@ -402,6 +407,7 @@ class Common:
         local_all_items_file = self.get_local_all_items_file(item_type=item_type)
         self.logger.info('compare and write: ' + local_all_items_file)
         self.always_overwrite_or_compare_overwrite(local_file=local_all_items_file, data=items)
+        return local_all_items_file
 
     # get all items for an item_type by call Octopus API /api/{space_id}/item_type with 'get' operation
     # {space_id} is optional
@@ -456,7 +462,8 @@ class Common:
             raise ValueError("item_type must not be empty")
         self.log_info_print(msg=f"downloading {item_type} in space {self.config.space_id}...")
         all_items = self.get_one_type_ignore_error(item_type=item_type)
-        self.compare_overwrite_multiple_items(items=all_items, item_type=item_type)
+        local_all_items_file = self.compare_overwrite_multiple_items(items=all_items, item_type=item_type)
+        self.log_info_print(msg=f"saved all {item_type} to local file {local_all_items_file}")
         if item_type == item_type_users:
             list_users = self.get_list_items_from_all_items(all_items=all_items)
             user_ids = [user.get(id_key) for user in list_users]
@@ -734,8 +741,7 @@ class Common:
         if not item.get(name_key) and payload.get(name_key):
             self.logger.warning(f"the new item has no name, so the input item name {payload.get(name_key)} is used")
             item[name_key] = payload.get(name_key)
-        local_item_file = self.get_local_single_item_file_from_item(item=item, item_type=item_type)
-        save_file(file_path_name=local_item_file, content=item)
+        self.save_single_item(item_type=item_type, item=item)
         return item
 
     # put a single item by call Octopus API /api/{space_id}/item_type/{id} with 'put' operation
@@ -758,8 +764,7 @@ class Common:
         item_info = payload.get(name_key) if payload.get(name_key) else payload.get(id_key)
         self.logger.info(f"updating {item_type} {item_info} in {self.config.space_id} and saving to a local file...")
         item = self.put_single_item(item_type=item_type, payload=payload)
-        local_item_file = self.get_local_single_item_file_from_item(item=item, item_type=item_type)
-        save_file(file_path_name=local_item_file, content=item)
+        self.save_single_item(item_type=item_type, item=item)
         return item
 
     # put a child-item by call Octopus API /api/{space_id}/child_type/{id} with 'put' operation
@@ -779,14 +784,17 @@ class Common:
     def update_single_item_save(self, item_type, item_name=None, item_id=None):
         if not item_type or not item_name and not item_id:
             raise ValueError("item_type and item_name/item_id must not be empty")
+        local_file = self.get_local_single_item_file_smartly(item_type=item_type, item_name=item_name, item_id=item_id)
         self.log_info_print(msg=f"updating {item_type} {item_name if item_name else item_id} in space "
-                                f"{self.config.space_id} from local file")
+                                f"{self.config.space_id} from local file {local_file}")
         is_same, local_item, remote_item = \
             self.is_local_same_as_remote(item_type=item_type, item_name=item_name, item_id=item_id)
         if is_same:
             self.log_info_print(msg=remote_local_same_msg)
             return local_item
-        return self.put_single_item_save(item_type=item_type, payload=local_item)
+        item = self.put_single_item_save(item_type=item_type, payload=local_item)
+        self.log_info_print(msg=f"update succeeded")
+        return item
 
     # delete unused sub items if the item cannot be deleted due to some sub items are being used
     def delete_sub_items(self, item_type, item_name=None, item_id=None):

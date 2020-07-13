@@ -198,7 +198,7 @@ class SubmitWidgets(tk.Frame):
         local_time = strftime("%Y.%m%d.%H%M%S", localtime())
         current_user = getpass.getuser()
         self.release_version_num_var.set(f"{local_time}-{current_user}")
-        tk.Entry(self, width=CommonWidgets.WIDTH_20, textvariable=self.release_version_num_var).grid(sticky=tk.W)
+        tk.Entry(self, width=CommonWidgets.WIDTH_40, textvariable=self.release_version_num_var).grid(sticky=tk.W)
 
         project_name = self.server.get_item_name_by_id(
             item_type=item_type_projects, item_id=self.server.config.project_id)

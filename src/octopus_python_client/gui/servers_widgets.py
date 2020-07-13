@@ -42,7 +42,8 @@ class ServersWidgets(tk.Frame):
     @staticmethod
     def file_dialog_ask_dir(tk_var: tk.StringVar):
         a_dir = filedialog.askdirectory(initialdir=tk_var.get(), title="Select path")
-        tk_var.set(a_dir)
+        if a_dir:
+            tk_var.set(a_dir)
 
     def set_server_frame(self, config: Config):
         server_frame = tk.Frame(self)

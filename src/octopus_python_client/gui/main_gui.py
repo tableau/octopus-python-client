@@ -16,7 +16,7 @@ class MainGUI:
 
     def set_gui(self):
         window = tk.Tk()
-        window.title('Octopus python client - Developed by Tony Li & Tableau Cloud Engineering')
+        window.title(f"Octopus Python Client - Developed by Tony Li & Tableau Cloud Engineering Team")
         window.option_add("*font", "calibri 14")
         window["bg"] = "black"
 

@@ -216,19 +216,21 @@ class SubmitWidgets(tk.Frame):
     def set_get_item_frame(self):
         items_list = self.server.get_list_from_one_type(self.server.config.type)
         if self.assert_items_list(items_list=items_list):
-            self.set_combobox_items_frame(items_list=items_list, common=self.server, bind_func=self.set_target_item_id)
-            self.set_target_item_id()
+            self.set_combobox_items_frame(items_list=items_list, common=self.server, bind_func=self.set_local_file)
+            self.set_update_file_path_frame()
+            self.set_local_file()
             self.set_check_package_overwrite()
 
     def set_update_item_frame(self):
         items_list = self.server.get_list_from_one_type(self.server.config.type)
         if self.assert_items_list(items_list=items_list):
-            self.set_combobox_items_frame(items_list=items_list, common=self.server, bind_func=self.set_local_file)
+            self.set_combobox_items_frame(items_list=items_list, common=self.server,
+                                          bind_func=self.set_check_local_file)
             self.set_update_file_path_frame()
-            self.set_local_file()
+            self.set_check_local_file()
 
     def set_update_file_path_frame(self):
-        tk.Label(self, text="The local file as the configuration (Please make sure the file exists)").grid(sticky=tk.W)
+        tk.Label(self, text="The local file as the configuration").grid(sticky=tk.W)
         self.local_file_var = tk.StringVar()
         tk.Entry(self, width=CommonWidgets.WIDTH_120, textvariable=self.local_file_var, state=CommonWidgets.READ_ONLY) \
             .grid(sticky=tk.W)
@@ -259,8 +261,8 @@ class SubmitWidgets(tk.Frame):
 
     def set_combobox_items_frame(self, items_list: list, common: Common, bind_func):
         default_item = find_item(lst=items_list, key=id_key, value=common.config.item_id)
-        default_text = self.construct_item_name_id_text(item=default_item)
-        texts_list = [self.construct_item_name_id_text(item=item) for item in items_list]
+        default_text = SubmitWidgets.construct_item_name_id_text(item=default_item)
+        texts_list = [SubmitWidgets.construct_item_name_id_text(item=item) for item in items_list]
         self.combobox_var = CommonWidgets.set_combobox_items_frame(
             parent=self, texts_list=texts_list, bind_func=bind_func, default_text=default_text,
             title=f"Select an item for type {self.server.config.type} (item name|id, or version|id or id only:")
@@ -277,12 +279,10 @@ class SubmitWidgets(tk.Frame):
         self.source.config.item_name = ""
         self.server.log_info_print(f"item_id: {item_id}")
 
-    def set_target_item_id(self, event=None):
+    def set_check_local_file(self, event=None):
         logger.info(msg=str(event))
-        item_name, item_id = SubmitWidgets.split_item_name_id(self.combobox_var.get())
-        self.server.config.item_id = item_id
-        self.server.config.item_name = ""
-        self.server.log_info_print(f"item_id: {item_id}")
+        local_file = self.set_local_file()
+        self.check_local_file(local_file=local_file)
 
     def set_local_file(self, event=None):
         logger.info(msg=str(event))
@@ -292,6 +292,9 @@ class SubmitWidgets(tk.Frame):
         local_file = self.server.get_local_single_item_file_smartly(
             item_type=self.server.config.type, item_name=item_name, item_id=item_id)
         self.local_file_var.set(local_file)
+        return local_file
+
+    def check_local_file(self, local_file):
         if Path(local_file).is_file():
             self.submit_button.config(state=tk.NORMAL)
         else:
@@ -309,15 +312,14 @@ class SubmitWidgets(tk.Frame):
             item_id = item_name_id
         return item_name, item_id
 
-    def construct_item_name_id_text(self, item):
+    @staticmethod
+    def construct_item_name_id_text(item):
         if not item:
             return None
         elif isinstance(item, str):
             return item
         elif item.get(name_key) and item.get(id_key):
             return item.get(name_key) + SubmitWidgets.DIVIDER_BAR + item.get(id_key)
-        elif self.server.config.action == Actions.ACTION_GET and item.get(version_key) and item.get(id_key):
-            return item.get(version_key) + SubmitWidgets.DIVIDER_BAR + item.get(id_key)
         elif item.get(id_key):
             return item.get(id_key)
         else:
@@ -457,7 +459,8 @@ class SubmitWidgets(tk.Frame):
 
         elif self.server.config.action == Actions.ACTION_GET:
             msg = f"Are you sure you want to download item {self.server.config.item_id} from space " \
-                  f"{self.server.config.space_id} on server {self.server.config.endpoint}?"
+                  f"{self.server.config.space_id} on server {self.server.config.endpoint} to local file " \
+                  f"{self.local_file_var.get()}?"
             msg += (historical_package_msg if item_type_packages == self.server.config.type else "")
             msg += overwrite_msg
             if messagebox.askyesno(title=f"{self.server.config.action}", message=msg):

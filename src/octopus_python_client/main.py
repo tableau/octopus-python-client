@@ -6,7 +6,7 @@ import sys
 from octopus_python_client.actions import Actions, MIGRATION_LIST
 from octopus_python_client.common import item_type_deployment_processes, outer_space_download_types, steps_key, \
     inside_space_download_types, deployment_process_id_key, Common
-from octopus_python_client.config import Config
+from octopus_python_client.config import Config, SystemConfig
 from octopus_python_client.deployment_processes import DeploymentProcesses
 from octopus_python_client.gui.main_gui import MainGUI
 from octopus_python_client.migration import Migration
@@ -28,6 +28,7 @@ class OctopusClient:
     @staticmethod
     def _parse_args():
         parser = argparse.ArgumentParser()
+        parser.add_argument("-v", "--version", help="if present, print the version information", action="store_true")
         parser.add_argument("-o", "--endpoint", help="octopus endpoint")
         parser.add_argument("-s", "--space_id_name", help="octopus space id or name")
         parser.add_argument("-m", "--pem", help="octopus endpoint root pem file path; -m=false to disable pem")
@@ -107,6 +108,9 @@ class OctopusClient:
         args = self._parse_args()
         if args.action:
             self._target_config.action = args.action
+        elif args.version:
+            print(SystemConfig.TITLE)
+            sys.exit()
         else:
             MainGUI().set_gui()
             sys.exit()
@@ -335,9 +339,9 @@ class OctopusClient:
 
 
 def main():
-    logger.info("********** Octopus deploy python client tool - start **********")
+    logger.info(f"********** {SystemConfig.TITLE} - start **********")
     OctopusClient().run()
-    logger.info("********** Octopus deploy python client tool - end **********")
+    logger.info(f"********** Octopus deploy python client tool - done **********")
 
 
 if __name__ == "__main__":

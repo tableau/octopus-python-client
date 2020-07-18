@@ -1,7 +1,7 @@
 import tkinter as tk
 
 from octopus_python_client.common import Common
-from octopus_python_client.config import Config
+from octopus_python_client.config import Config, SystemConfig
 from octopus_python_client.gui.wizard import Wizard
 
 
@@ -16,7 +16,7 @@ class MainGUI:
 
     def set_gui(self):
         window = tk.Tk()
-        window.title(f"Octopus Python Client - Developed by Tony Li & Tableau Cloud Engineering Team")
+        window.title(SystemConfig.TITLE)
         window.option_add("*font", "calibri 14")
         window["bg"] = "black"
 

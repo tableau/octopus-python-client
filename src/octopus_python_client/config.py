@@ -1,16 +1,31 @@
 import copy
+import json
 import logging
-import os
+from os import getcwd
+from os.path import dirname, abspath, join
 from pathlib import Path
 
 from octopus_python_client.actions import Actions
+from octopus_python_client.constants import Constants
+from octopus_python_client.utilities.get_pypi_version import get_version
 from octopus_python_client.utilities.helper import load_file, save_file
 
-logging.basicConfig(filename=os.path.join(os.getcwd(), "octopus_python_client.log"),
+logging.basicConfig(filename=join(getcwd(), "octopus_python_client.log"),
                     filemode="a",
                     format="%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s",
                     datefmt="%H:%M:%S",
                     level=logging.INFO)
+
+
+class SystemConfig:
+    with open(f"{dirname(abspath(__file__))}/configurations/system_config.json") as fp:
+        system_config = json.load(fp)
+    PACKAGE_VERSION = system_config.get(Constants.PACKAGE_VERSION_KEY)
+    PACKAGE_NAME = system_config.get(Constants.PACKAGE_NAME_KEY)
+    LIBRARY_NAME = system_config.get(Constants.LIBRARY_NAME_KEY)
+    LATEST_PYPI_VERSION = get_version(PACKAGE_NAME)
+    TITLE = f"Octopus Python Client - Developed by Tony Li & Tableau Cloud Engineering Team - Version " \
+            f"{PACKAGE_VERSION} - the latest PYPI version is {LATEST_PYPI_VERSION}"
 
 
 class BaseConfig:
@@ -22,7 +37,7 @@ class BaseConfig:
 
     def __init__(self, is_source_server: bool = False):
         self.api_key = ""
-        self.data_path = os.getcwd()
+        self.data_path = getcwd()
         self.endpoint = ""
         self.is_source_server = is_source_server
         self.item_id = ""
@@ -66,8 +81,8 @@ class Config(BaseConfig):
 
         configuration_file_name = configuration_file_name if configuration_file_name else \
             (Config.SOURCE_SERVER_JSON if is_source_server else Config.DEFAULT_CONFIGURATION_FILE_NAME)
-        code_path = os.path.dirname(os.path.abspath(__file__))
-        self.config_file = os.path.join(code_path, Config.CONFIGURATIONS_FOLDER, configuration_file_name)
+        code_path = dirname(abspath(__file__))
+        self.config_file = join(code_path, Config.CONFIGURATIONS_FOLDER, configuration_file_name)
         self.load_config()
 
     def load_config(self):

@@ -23,6 +23,7 @@ class Wizard(tk.Frame):
         self.back_button = tk.Button(self.button_frame, text="<< Back", command=self.back)
         self.next_button = tk.Button(self.button_frame, text="Next >>", command=self.next)
         self.submit_button = tk.Button(self.button_frame, text="Submit", command=self.submit)
+        self.restart_button = tk.Button(self.button_frame, text="<<<< Restart", command=self.restart)
         self.button_frame.pack(side="bottom", fill="x")
 
         self.content_frame = tk.Frame(self)
@@ -45,17 +46,20 @@ class Wizard(tk.Frame):
         if step == 0:
             # first step
             self.back_button.pack_forget()
+            self.restart_button.pack_forget()
             self.next_button.pack(side="right")
             self.submit_button.pack_forget()
 
         elif step == len(self.steps) - 1:
             # last step
+            self.restart_button.pack(side="left")
             self.back_button.pack(side="left")
             self.next_button.pack_forget()
             self.submit_button.pack(side="right")
 
         else:
             # all other steps
+            self.restart_button.pack(side="left")
             self.back_button.pack(side="left")
             self.next_button.pack(side="right")
             self.submit_button.pack_forget()
@@ -71,3 +75,7 @@ class Wizard(tk.Frame):
     def submit(self):
         self.current_step_widgets.process_config()
         self.current_step_widgets.start_run()
+
+    def restart(self):
+        self.current_step_widgets.process_config()
+        self.show_step(0)

@@ -76,7 +76,7 @@ pip uninstall octopus-python-client
 
 * Please check the [wiki](https://github.com/tableau/octopus-python-client/wiki) for more details
 * [PYPI Octopus-python-client](https://pypi.org/project/octopus-python-client/)
-* [Video instrutions on YouTube](https://www.youtube.com/playlist?list=PL2fpVtvfIcu2zgAX0LdxLpSuh3ceDeVT7)
+* [Video instructions on YouTube](https://www.youtube.com/playlist?list=PL2fpVtvfIcu2zgAX0LdxLpSuh3ceDeVT7)
 
 # Contributions
 

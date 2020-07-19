@@ -76,6 +76,12 @@ class SubmitWidgets(tk.Frame):
 
         elif self.server.config.action == Actions.ACTION_CLONE_SPACE \
                 or self.server.config.action == Actions.ACTION_GET_SPACES:
+            if not self.server.config.types:
+                messagebox.showerror(
+                    title=f"No types selected",
+                    message=f"You must select at least one type")
+                self.submit_button.config(state=tk.DISABLED)
+                return
             if item_type_packages in self.server.config.types:
                 self.set_package_history_widget()
             self.set_overwrite_widget()

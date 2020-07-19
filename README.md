@@ -74,11 +74,13 @@ pip uninstall octopus-python-client
 
 # Run octopus-python-client
 
-Please check the [wiki](https://github.com/tableau/octopus-python-client/wiki) for more details
+* Please check the [wiki](https://github.com/tableau/octopus-python-client/wiki) for more details
+* [PYPI Octopus-python-client](https://pypi.org/project/octopus-python-client/)
+* [Video instrutions on YouTube](https://www.youtube.com/playlist?list=PL2fpVtvfIcu2zgAX0LdxLpSuh3ceDeVT7)
 
 # Contributions
 
 Code contributions and improvements by the community are welcomed!
 See the LICENSE file for current open-source licensing and use information.
 
-Before we can accept pull requests from contributors, we require a signed [Contributor License Agreement (CLA)](http://tableau.github.io/contributing.html),
+Before we can accept pull requests from contributors, we require a signed [Contributor License Agreement (CLA)](http://tableau.github.io/contributing.html).

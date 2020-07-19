@@ -52,15 +52,15 @@ class Wizard(tk.Frame):
 
         elif step == len(self.steps) - 1:
             # last step
-            self.restart_button.pack(side="left")
             self.back_button.pack(side="left")
+            self.restart_button.pack(side="left")
             self.next_button.pack_forget()
             self.submit_button.pack(side="right")
 
         else:
             # all other steps
-            self.restart_button.pack(side="left")
             self.back_button.pack(side="left")
+            self.restart_button.pack(side="left")
             self.next_button.pack(side="right")
             self.submit_button.pack_forget()
 

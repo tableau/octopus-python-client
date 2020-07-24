@@ -63,8 +63,9 @@ After you've cloned octopus-python-client, configure it by following these steps
 * To install octopus-python-client, run
 
 ```
-pip install .
+pip install octopus-python-client --upgrade
 ```
+You need python3.6 and higher
 
 * To uninstall octopus-python-client, run
 

@@ -225,7 +225,10 @@ class Migration:
                 msg = f"cloning {item_type} {src_item.get(name_key)} to {project_id}"
                 self._dst_common.log_info_print(msg=msg)
                 src_item[project_id_key] = project_id
+                # the same child item needs to be cloned again for the next project
                 self._src_id_vs_dst_id_dict.pop(item_id, None)
+                # the destination project should not be cloned to itself
+                self._src_id_vs_dst_id_dict[project_id] = project_id
                 self._create_item_to_space(item_type=item_type, src_item=src_item)
                 self._project_id = None
             return

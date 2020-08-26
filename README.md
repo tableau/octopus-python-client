@@ -29,7 +29,7 @@ start Octopus python client GUI
 ```
 octopus_python_client
 ```
-[MacOS issue](https://stackoverflow.com/questions/52529403/button-text-of-tkinter-does-not-work-in-mojave)
+[macOS issue](https://stackoverflow.com/questions/52529403/button-text-of-tkinter-does-not-work-in-mojave)
 
 get all configurations and settings from all spaces at https://samples.octopus.app/api/
 ```
@@ -45,7 +45,7 @@ This section describes how to install and configure octopus-python-client.
 
 To work with octopus-python-client, you need the following:
 
-* Windows, MacOS, Linux
+* Windows, macOS, Linux
 * [requests >= 2.20.0](https://pypi.org/project/requests/)
 * [PyYAML>=5.1](https://pypi.org/project/PyYAML/)
 * python >= 3.6
@@ -55,7 +55,7 @@ To work with octopus-python-client, you need the following:
 
 After you've cloned octopus-python-client, configure it by following these steps before installation
 
-* open src/octopus_python_client/configurations/configuration.jason
+* open src/octopus_python_client/configurations/configuration.json
 * change the endpoint, folder name; user_name and password or api_key is needed, not both
 
 ## Installation

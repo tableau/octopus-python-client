@@ -23,7 +23,7 @@ class Wizard(tk.Frame):
         self.back_button = tk.Button(self.button_frame, text="<< Back", command=self.back)
         self.next_button = tk.Button(self.button_frame, text="Next >>", command=self.next)
         self.submit_button = tk.Button(self.button_frame, text="Submit", command=self.submit)
-        self.restart_button = tk.Button(self.button_frame, text="<<<< Restart", command=self.restart)
+        self.restart_button = tk.Button(self.button_frame, text="<<<< Home", command=self.restart)
         self.button_frame.pack(side="bottom", fill="x")
 
         self.content_frame = tk.Frame(self)

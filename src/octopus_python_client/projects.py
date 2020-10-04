@@ -36,10 +36,11 @@ class Projects:
         self.common.log_info_print(
             local_logger=self.logger,
             msg=f"clone project from {base_project_name} to {project_literal_name} inside space {self.config.space_id}")
-        self.common.clone_single_item_from_remote_item(
+        new_project_dict = self.common.clone_single_item_from_remote_item(
             item_type=item_type_projects, item_name=project_literal_name, base_item_name=base_project_name)
         self.deployment_processes.clone_deployment_process(
             project_literal_name=project_literal_name, base_project_name=base_project_name)
+        return new_project_dict
 
     def delete_projects(self, project_groups_comma_delimited, excluded_projects_comma_delimited=None):
         assert project_groups_comma_delimited, f"project groups delimited by comma must not be empty"

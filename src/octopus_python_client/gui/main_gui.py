@@ -28,5 +28,9 @@ class MainGUI:
         window.mainloop()
 
 
-if __name__ == "__main__":
+def main():
     MainGUI().set_gui()
+
+
+if __name__ == "__main__":
+    main()

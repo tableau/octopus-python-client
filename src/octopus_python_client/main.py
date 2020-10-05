@@ -7,8 +7,8 @@ from octopus_python_client.actions import Actions, MIGRATION_LIST
 from octopus_python_client.common import item_type_deployment_processes, outer_space_download_types, steps_key, \
     inside_space_download_types, deployment_process_id_key, Common
 from octopus_python_client.config import Config, SystemConfig
+from octopus_python_client.constants import Constants
 from octopus_python_client.deployment_processes import DeploymentProcesses
-from octopus_python_client.gui.main_gui import MainGUI
 from octopus_python_client.migration import Migration
 from octopus_python_client.projects import Projects
 from octopus_python_client.release_deployment import ReleaseDeployment
@@ -112,7 +112,7 @@ class OctopusClient:
             print(SystemConfig.TITLE)
             sys.exit()
         else:
-            MainGUI().set_gui()
+            print(Constants.TO_RUN_GUI)
             sys.exit()
 
         if args.endpoint:
@@ -333,7 +333,7 @@ class OctopusClient:
                 channel_name=args.channel_name, notes=args.notes, environment_name=args.environment_name,
                 tenant_name=args.tenant_name, comments=args.comments)
         elif self._target_config.action == Actions.ACTION_GUI:
-            MainGUI().set_gui()
+            print(Constants.TO_RUN_GUI)
         else:
             log_raise_value_error(local_logger=logger, err="We only support actions: " + str(Actions.__dict__.values()))
 

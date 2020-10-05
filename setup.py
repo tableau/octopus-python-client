@@ -29,7 +29,8 @@ setup(
     include_package_data=True,
     entry_points={
         'console_scripts': [
-            f"{system_config.get(LIBRARY_NAME_KEY)} = {system_config.get(LIBRARY_NAME_KEY)}.main:main"
+            f"{system_config.get(LIBRARY_NAME_KEY)} = {system_config.get(LIBRARY_NAME_KEY)}.main:main",
+            f"{system_config.get(LIBRARY_NAME_KEY)}_gui = {system_config.get(LIBRARY_NAME_KEY)}.gui.main_gui:main"
         ]
     }
 )

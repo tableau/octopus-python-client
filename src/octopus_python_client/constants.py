@@ -9,5 +9,6 @@ class Constants:
     PROJECT_TRIGGERS_ITEM_TYPE = "projecttriggers"
     RUNBOOKS_ITEM_TYPE = "runbooks"
     TRIGGERS_ITEM_TYPE = "triggers"
+    TO_RUN_GUI = "Please run octopus_python_client_gui to start the GUI interface"
 
     PROJECT_RELATED_TYPES = [CHANNELS_ITEM_TYPE, RUNBOOKS_ITEM_TYPE, PROJECT_TRIGGERS_ITEM_TYPE]

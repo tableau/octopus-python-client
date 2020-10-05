@@ -27,11 +27,11 @@ https://help.octopus.com/t/octopus-migration-import-api-does-not-honor-space-id/
 # Example
 start Octopus python client GUI
 ```
-octopus_python_client
+octopus_python_client_gui
 ```
 [macOS issue](https://stackoverflow.com/questions/52529403/button-text-of-tkinter-does-not-work-in-mojave)
 
-get all configurations and settings from all spaces at https://samples.octopus.app/api/
+command line example: get all configurations and settings from all spaces at https://samples.octopus.app/api/
 ```
 octopus_python_client -a=get_spaces
 ```

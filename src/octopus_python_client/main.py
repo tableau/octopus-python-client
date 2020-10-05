@@ -332,8 +332,6 @@ class OctopusClient:
                 config=self._target_config, release_version=args.release_version, project_name=args.project_name,
                 channel_name=args.channel_name, notes=args.notes, environment_name=args.environment_name,
                 tenant_name=args.tenant_name, comments=args.comments)
-        elif self._target_config.action == Actions.ACTION_GUI:
-            print(Constants.TO_RUN_GUI)
         else:
             log_raise_value_error(local_logger=logger, err="We only support actions: " + str(Actions.__dict__.values()))
 

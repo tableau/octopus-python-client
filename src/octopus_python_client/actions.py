@@ -26,7 +26,6 @@ class Actions:
     ACTION_GET_SPACES = "get_spaces"  # get multiple spaces
     ACTION_GET_TYPE = "get_type"  # get all items_dict under one type
     ACTION_GET_TYPES = "get_types"  # get all types
-    ACTION_GUI = "gui"  # start Octopus python client GUI
     ACTION_PROJECT_UPDATE_VARIABLE_SETS = "update_variable_sets"  # update the variable sets for a project
     ACTION_TASK_STATUS = "task_status"
     ACTION_UPDATE = "update"  # update one item

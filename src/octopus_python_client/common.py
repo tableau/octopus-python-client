@@ -166,7 +166,8 @@ user_ext_types = [item_type_api_keys, item_type_permissions, item_type_permissio
 ext_types_map = {item_type_users: user_ext_types}
 
 item_types_with_duplicate_names = \
-    {item_type_channels, item_type_tasks, item_type_deployments, item_type_configuration, item_type_spaces}
+    {item_type_channels, item_type_tasks, item_type_deployments, item_type_configuration, item_type_spaces,
+     item_type_runbooks}
 
 item_types_without_single_item = \
     {item_type_dashboard, item_type_dashboard_dynamic, item_type_variables, item_type_variables_names}
@@ -372,17 +373,15 @@ class Common:
         return self.get_local_single_item_file_smartly(
             item_type=item_type, item_name=item.get(name_key), item_id=item.get(id_key))
 
-    # get local item file smartly; three possibilities
-    # use 'Name'
-    # use 'Id' if 'Name' not available
-    # use item_type if neither 'Id' nor 'Name' available
     def get_local_single_item_file_smartly(self, item_type, item_name=None, item_id=None):
         if not item_type:
             raise ValueError("item_type must not be empty!")
-        if item_name and item_type not in item_types_with_duplicate_names:
-            return self.get_local_single_item_file(item_name=item_name, item_type=item_type)
+        if item_name and item_id:
+            return self.get_local_single_item_file(item_name=item_id + "_" + item_name, item_type=item_type)
         elif item_id:
             return self.get_local_single_item_file(item_name=item_id, item_type=item_type)
+        elif item_name:
+            return self.get_local_single_item_file(item_name=item_name, item_type=item_type)
         else:
             return self.get_local_single_item_file(item_name=item_type, item_type=item_type)
 

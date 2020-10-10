@@ -8,6 +8,7 @@ class Constants:
     PROJECT_IDS_KEY = "project_ids"
     PROJECT_TRIGGERS_ITEM_TYPE = "projecttriggers"
     RUNBOOKS_ITEM_TYPE = "runbooks"
+    TENANT_NAME_KEY = "TenantName"
     TRIGGERS_ITEM_TYPE = "triggers"
     TO_RUN_GUI = "Please run octopus_python_client_gui to start the GUI interface"
 

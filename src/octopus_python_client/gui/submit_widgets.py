@@ -9,7 +9,8 @@ from tkinter import messagebox
 
 from octopus_python_client.actions import Actions, ACTIONS_DICT
 from octopus_python_client.common import Common, item_type_channels, project_id_key, name_key, id_key, \
-    item_type_projects, release_versions_key, version_key, item_type_packages, item_type_environments, item_type_tenants
+    item_type_projects, release_versions_key, version_key, item_type_packages, item_type_environments, \
+    item_type_tenants, tenant_id_key
 from octopus_python_client.constants import Constants
 from octopus_python_client.gui.common_widgets import CommonWidgets
 from octopus_python_client.migration import Migration
@@ -326,6 +327,8 @@ class SubmitWidgets(tk.Frame):
             return item
         elif item.get(name_key) and item.get(id_key):
             return item.get(name_key) + SubmitWidgets.DIVIDER_BAR + item.get(id_key)
+        elif item.get(tenant_id_key) and item.get(Constants.TENANT_NAME_KEY):
+            return item.get(Constants.TENANT_NAME_KEY) + SubmitWidgets.DIVIDER_BAR + item.get(tenant_id_key)
         elif item.get(id_key):
             return item.get(id_key)
         else:

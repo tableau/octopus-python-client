@@ -5,6 +5,7 @@ import time
 from pprint import pformat
 
 from octopus_python_client.config import Config
+from octopus_python_client.constants import Constants
 from octopus_python_client.utilities.helper import compare_overwrite, find_item, load_file, save_file, \
     is_local_same_as_remote2, write_binary_file
 from octopus_python_client.utilities.send_requests_to_octopus import call_octopus, operation_get, operation_post, \
@@ -608,17 +609,24 @@ class Common:
         address = item_type_tenants + slash_sign + tenant_id + slash_sign + item_type_variables
         return self.request_octopus_item(address=address)
 
+    def get_tenant_variables_local_file_path(self, tenant_variables):
+        return self.get_local_single_item_file_smartly(
+            item_name=tenant_variables.get(Constants.TENANT_NAME_KEY), item_id=tenant_variables.get(tenant_id_key),
+            item_type=item_type_tenant_variables)
+
     # get tenant variables and save to a file
     def get_tenant_variables_save(self, tenant_id):
         self.logger.info(f"getting and saving {item_type_tenant_variables} for tenant {tenant_id} in space "
                          f"{self.config.space_id}")
         tenant_variables = self.get_tenant_variables(tenant_id=tenant_id)
-        dst_file = self.get_local_single_item_file(item_name=tenant_id + underscore_sign + item_type_variables,
-                                                   item_type=item_type_tenant_variables)
+        dst_file = self.get_tenant_variables_local_file_path(tenant_variables=tenant_variables)
         save_file(file_path_name=dst_file, content=tenant_variables)
         self.log_info_print(msg=f"saved {item_type_tenant_variables} for tenant {tenant_id} to {dst_file}")
         return tenant_variables
 
+    # TODO this function do not change the tenant variables, it might be Octopus server bug
+    # Test throught POSTMAN and do not see anything gets updated either
+    # http://localhost/api/Spaces-5/tenants/Tenants-301/variables
     def put_post_tenant_variables(self, tenant_id, tenant_variables):
         self.logger.info(f"put or post tenant variables for an existing tenant {tenant_id} in {self.config.space_id}")
         address = item_type_tenants + slash_sign + tenant_id + slash_sign + item_type_variables
@@ -640,9 +648,7 @@ class Common:
         self.logger.info(f"put or post tenant variables for an existing tenant {tenant_id} in {self.config.space_id} "
                          f"and save to a file")
         remote_tenant_variables = self.put_post_tenant_variables(tenant_id=tenant_id, tenant_variables=tenant_variables)
-        tenant_variables_file = \
-            self.get_local_single_item_file(item_name=tenant_id + underscore_sign + item_type_variables,
-                                            item_type=item_type_tenant_variables)
+        tenant_variables_file = self.get_tenant_variables_local_file_path(tenant_variables=tenant_variables)
         save_file(file_path_name=tenant_variables_file, content=remote_tenant_variables)
         return remote_tenant_variables
 
@@ -669,9 +675,12 @@ class Common:
     def get_single_item_by_name_or_id_save(self, item_type, item_name=None, item_id=None):
         item_badge = item_name if item_name else item_id
         self.log_info_print(msg=f"Getting {item_type} {item_badge} in space {self.config.space_id} and saving file...")
-        item = self.get_single_item_by_name_or_id(item_type=item_type, item_name=item_name, item_id=item_id)
-        local_item_file = self.save_single_item(item_type=item_type, item=item)
-        self.log_info_print(msg=f"Saved {item_type} {item_badge} to {local_item_file}")
+        if item_type == item_type_tenant_variables:
+            item = {id_key: item_id, name_key: item_name}
+        else:
+            item = self.get_single_item_by_name_or_id(item_type=item_type, item_name=item_name, item_id=item_id)
+            local_item_file = self.save_single_item(item_type=item_type, item=item)
+            self.log_info_print(msg=f"Saved {item_type} {item_badge} to {local_item_file}")
         # process child items
         if item_type == item_type_projects:
             self.log_info_print(f"For item type {item_type_projects}, also get its deployment_process and variables...")
@@ -683,8 +692,8 @@ class Common:
             self.log_info_print(f"For item type{item_type_library_variable_sets}, also get variables")
             self.get_single_item_by_name_or_id_save(item_type=item_type_variables,
                                                     item_id=item.get(variable_set_id_key))
-        elif item_type == item_type_tenants:
-            self.log_info_print(f"For item type {item_type_tenants}, also get variables")
+        elif item_type == item_type_tenants or item_type == item_type_tenant_variables:
+            self.log_info_print(f"For item type {item_type_tenants}, get variables")
             self.get_tenant_variables_save(tenant_id=item.get(id_key))
         elif item_type == item_type_packages:
             self.log_info_print(f"For item type {item_type_packages}, also download the package")
@@ -786,12 +795,11 @@ class Common:
         local_file = self.get_local_single_item_file_smartly(item_type=item_type, item_name=item_name, item_id=item_id)
         self.log_info_print(msg=f"updating {item_type} {item_name if item_name else item_id} in space "
                                 f"{self.config.space_id} from local file {local_file}")
-        is_same, local_item, remote_item = \
-            self.is_local_same_as_remote(item_type=item_type, item_name=item_name, item_id=item_id)
-        if is_same:
-            self.log_info_print(msg=remote_local_same_msg)
-            return local_item
-        item = self.put_single_item_save(item_type=item_type, payload=local_item)
+        local_item = load_file(local_file)
+        if item_type == item_type_tenant_variables:
+            item = self.put_post_tenant_variables_save(tenant_id=item_id, tenant_variables=local_item)
+        else:
+            item = self.put_single_item_save(item_type=item_type, payload=local_item)
         self.log_info_print(msg=f"update succeeded")
         return item
 

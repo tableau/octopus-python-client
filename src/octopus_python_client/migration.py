@@ -166,6 +166,8 @@ class Migration:
             f"{self._dst_config.space_id}: popping {runbook_process_id_key}")
         src_item.pop(runbook_process_id_key, None)
         src_item.pop(published_runbook_snapshot_id_key, None)
+        if not src_item.get(Constants.RUN_RETENTION_POLICY_KEY):
+            src_item[Constants.RUN_RETENTION_POLICY_KEY] = {}
 
     def _prepare_space(self, src_item):
         # self.logger.info(f"prepare {item_type_spaces} {src_item.get(name_key)} {src_item.get(id_key)} for migrating "

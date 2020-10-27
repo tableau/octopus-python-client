@@ -7,9 +7,10 @@ class Constants:
     PACKAGE_VERSION_KEY = "package_version"
     PROJECT_IDS_KEY = "project_ids"
     PROJECT_TRIGGERS_ITEM_TYPE = "projecttriggers"
+    RUN_RETENTION_POLICY_KEY = "RunRetentionPolicy"
     RUNBOOKS_ITEM_TYPE = "runbooks"
     TENANT_NAME_KEY = "TenantName"
-    TRIGGERS_ITEM_TYPE = "triggers"
     TO_RUN_GUI = "Please run octopus_python_client_gui to start the GUI interface"
+    TRIGGERS_ITEM_TYPE = "triggers"
 
     PROJECT_RELATED_TYPES = [CHANNELS_ITEM_TYPE, RUNBOOKS_ITEM_TYPE, PROJECT_TRIGGERS_ITEM_TYPE]

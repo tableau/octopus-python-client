@@ -62,6 +62,7 @@ items_key = 'Items'
 latest_commit_sha_key = "latest_commit_sha"
 life_cycle_id_key = "LifecycleId"
 name_key = 'Name'
+slug_key = 'Slug'
 new_value_key = "NewValue"
 next_version_increment_key = "NextVersionIncrement"
 no_stdout_key = "no_stdout"
@@ -882,6 +883,7 @@ class Common:
             self.prepare_project_versioning_strategy(project=base_item)
         # create a new item from the remote item
         base_item[name_key] = item_name
+        base_item[slug_key] = item_name
         item = self.post_single_item_save(item_type=item_type, payload=base_item)
         return item
 
